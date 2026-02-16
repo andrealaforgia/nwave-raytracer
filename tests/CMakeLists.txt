@@ -1,0 +1,27 @@
+add_executable(nwave_tests
+    core/vec3_test.cpp
+    core/ray_test.cpp
+    core/aabb_test.cpp
+    domain/sphere_test.cpp
+    domain/plane_test.cpp
+    domain/triangle_test.cpp
+    domain/box_test.cpp
+    domain/triangle_mesh_test.cpp
+    domain/lambertian_test.cpp
+    domain/metal_test.cpp
+    domain/dielectric_test.cpp
+    domain/point_light_test.cpp
+    domain/camera_test.cpp
+    application/renderer_test.cpp
+    application/sampling_test.cpp
+    infrastructure/ppm_writer_test.cpp
+)
+
+target_link_libraries(nwave_tests
+    PRIVATE
+        nwave_infrastructure
+        GTest::gtest_main
+)
+
+include(GoogleTest)
+gtest_discover_tests(nwave_tests)
