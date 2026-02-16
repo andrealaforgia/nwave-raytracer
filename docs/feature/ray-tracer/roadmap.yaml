@@ -1,0 +1,477 @@
+# nwave-raytracer Implementation Roadmap
+# Project ID: ray-tracer
+# Generated: 2026-02-16
+# Architecture: Clean Architecture (4 rings), Whitted-style recursive ray tracing, C++17
+
+project_id: ray-tracer
+total_phases: 11
+total_steps: 24
+
+# ==============================================================================
+# PHASE 1: Walking Skeleton (US-000)
+# Goal: Minimal end-to-end pipeline producing a rendered image
+# ==============================================================================
+
+phases:
+  - id: "01"
+    name: "Walking Skeleton"
+    user_stories: ["US-000"]
+    steps:
+      - id: "01-01"
+        name: "Core math primitives and build system"
+        description: |
+          Set up CMake build system with ring-based targets. Implement Vec3 (with
+          Point3, Color3 aliases), Ray, and math utilities. All with full TDD.
+        files_to_create:
+          - CMakeLists.txt
+          - src/CMakeLists.txt
+          - src/core/vec3.h
+          - src/core/ray.h
+          - src/core/math_utils.h
+          - tests/CMakeLists.txt
+          - tests/core/vec3_test.cpp
+          - tests/core/ray_test.cpp
+        acceptance_criteria:
+          - "Vec3 supports +, -, *, / (scalar and component-wise), unary -, dot, cross, length, normalize"
+          - "Point3 and Color3 are type aliases for Vec3"
+          - "Ray has origin (Point3) + direction (Vec3) and at(t) method"
+          - "Math utilities: pi, infinity, epsilon, degrees_to_radians, clamp, random_double"
+          - "All tests pass; CMake builds successfully with C++17"
+        dependencies: []
+
+      - id: "01-02"
+        name: "Shape interface, Sphere, and HitRecord"
+        description: |
+          Implement HitRecord struct, abstract Shape base class with hit() and
+          bounding_box() virtual methods, and Sphere with quadratic ray-sphere
+          intersection. Full TDD with known ray configurations.
+        files_to_create:
+          - src/domain/hit_record.h
+          - src/domain/shapes/shape.h
+          - src/domain/shapes/sphere.h
+          - src/domain/shapes/sphere.cpp
+          - tests/domain/sphere_test.cpp
+        acceptance_criteria:
+          - "HitRecord stores point, normal, t, front_face, material pointer"
+          - "HitRecord::set_face_normal correctly determines front_face and flips normal"
+          - "Sphere::hit returns true with correct t for ray hitting sphere"
+          - "Sphere::hit returns false for ray missing sphere"
+          - "Sphere normal points outward and is normalized"
+          - "Negative radius inverts the normal (for hollow glass)"
+        dependencies: ["01-01"]
+
+      - id: "01-03"
+        name: "Plane, Lambertian material, and PointLight"
+        description: |
+          Implement Plane (ray-plane intersection), Material abstract base class,
+          Lambertian material (diffuse scatter), Light abstract base class, and
+          PointLight. TDD for intersection, scatter, and illumination.
+        files_to_create:
+          - src/domain/shapes/plane.h
+          - src/domain/shapes/plane.cpp
+          - src/domain/materials/material.h
+          - src/domain/materials/lambertian.h
+          - src/domain/materials/lambertian.cpp
+          - src/domain/lights/light.h
+          - src/domain/lights/point_light.h
+          - src/domain/lights/point_light.cpp
+          - tests/domain/plane_test.cpp
+          - tests/domain/lambertian_test.cpp
+          - tests/domain/point_light_test.cpp
+        acceptance_criteria:
+          - "Plane::hit computes correct t for ray-plane intersection"
+          - "Plane::hit returns false for parallel rays"
+          - "Lambertian::scatter produces scattered ray with direction = normal + random_unit_vector()"
+          - "Lambertian attenuation equals albedo"
+          - "PointLight::illuminate returns direction to light, distance, and color*intensity"
+        dependencies: ["01-02"]
+
+      - id: "01-04"
+        name: "Camera, Scene, Renderer, and PPM output"
+        description: |
+          Implement pinhole Camera (lookfrom/lookat/vup/vfov), Scene container,
+          Renderer with basic trace_ray (single sample, direct illumination),
+          PPM writer, and main.cpp with hardcoded scene. Walking skeleton complete.
+        files_to_create:
+          - src/domain/camera.h
+          - src/domain/camera.cpp
+          - src/domain/scene.h
+          - src/domain/scene.cpp
+          - src/application/renderer.h
+          - src/application/renderer.cpp
+          - src/infrastructure/ppm_writer.h
+          - src/infrastructure/ppm_writer.cpp
+          - src/main.cpp
+          - tests/domain/camera_test.cpp
+          - tests/application/renderer_test.cpp
+          - tests/infrastructure/ppm_writer_test.cpp
+        acceptance_criteria:
+          - "Camera generates correct rays for pixel coordinates"
+          - "Camera orthonormal basis (u,v,w) constructed from lookfrom/lookat/vup"
+          - "Scene stores shapes, lights, camera; Scene::hit delegates to shape list"
+          - "Renderer produces pixel buffer with correct colors for known scene"
+          - "trace_ray returns background color on miss, shaded color on hit"
+          - "PPM writer outputs valid P3 format: header + RGB triplets"
+          - "Running main produces output.ppm with visible red sphere on gray plane"
+          - "Gamma correction (sqrt) applied to output colors"
+        dependencies: ["01-03"]
+
+  # ==============================================================================
+  # PHASE 2: Additional Geometric Primitives (US-101, US-102, US-103)
+  # ==============================================================================
+
+  - id: "02"
+    name: "Additional Geometric Primitives"
+    user_stories: ["US-101", "US-102", "US-103"]
+    steps:
+      - id: "02-01"
+        name: "Triangle with Moller-Trumbore intersection"
+        description: |
+          Implement Triangle shape with Moller-Trumbore algorithm, barycentric
+          coordinates, and face normal computation.
+        files_to_create:
+          - src/domain/shapes/triangle.h
+          - src/domain/shapes/triangle.cpp
+          - tests/domain/triangle_test.cpp
+        acceptance_criteria:
+          - "Triangle::hit uses Moller-Trumbore and correctly identifies hits inside triangle"
+          - "Rays outside the triangle but on the triangle plane report no hit"
+          - "Rays parallel to triangle report no hit without NaN"
+          - "Barycentric coordinates (u, v) are reported at the hit point"
+          - "Face normal is perpendicular to triangle surface and normalized"
+          - "Triangle provides a bounding box enclosing all vertices"
+        dependencies: ["01-04"]
+
+      - id: "02-02"
+        name: "Axis-aligned Box with slab method"
+        description: |
+          Implement AABB class (for BVH later) and Box shape with slab-method
+          intersection and per-face normal determination.
+        files_to_create:
+          - src/core/aabb.h
+          - src/core/aabb.cpp
+          - src/domain/shapes/box.h
+          - src/domain/shapes/box.cpp
+          - tests/core/aabb_test.cpp
+          - tests/domain/box_test.cpp
+        acceptance_criteria:
+          - "AABB::hit implements slab method correctly"
+          - "AABB::surrounding_box merges two AABBs"
+          - "Box::hit returns correct t and determines which face was struck"
+          - "Box normal is correct axis-aligned unit vector for the hit face"
+          - "Ray inside box hits exit face with front_face = false"
+          - "Box handles min > max by swapping"
+        dependencies: ["01-04"]
+
+      - id: "02-03"
+        name: "TriangleMesh with smooth shading"
+        description: |
+          Implement TriangleMesh with shared vertices, per-vertex normals,
+          and barycentric normal interpolation for smooth shading.
+        files_to_create:
+          - src/domain/shapes/triangle_mesh.h
+          - src/domain/shapes/triangle_mesh.cpp
+          - tests/domain/triangle_mesh_test.cpp
+        acceptance_criteria:
+          - "TriangleMesh stores shared vertex positions and per-vertex normals"
+          - "Hit normal is interpolated: N = (1-u-v)*N0 + u*N1 + v*N2"
+          - "Interpolated normal is re-normalized"
+          - "Without per-vertex normals, face normal is used"
+          - "Bounding box encloses all vertices"
+        dependencies: ["02-01"]
+
+  # ==============================================================================
+  # PHASE 3: Enhanced Lighting (US-201, US-202, US-203)
+  # ==============================================================================
+
+  - id: "03"
+    name: "Enhanced Lighting"
+    user_stories: ["US-201", "US-202", "US-203"]
+    steps:
+      - id: "03-01"
+        name: "Multiple point lights and directional light"
+        description: |
+          Update renderer to iterate over multiple lights. Add DirectionalLight
+          with parallel shadow rays at infinity.
+        files_to_create:
+          - src/domain/lights/directional_light.h
+          - src/domain/lights/directional_light.cpp
+          - tests/domain/directional_light_test.cpp
+          - tests/application/multi_light_test.cpp
+        acceptance_criteria:
+          - "Scene supports 0+ lights; each contributes independently"
+          - "Colored lights tint surfaces (light_color * albedo * diffuse_factor)"
+          - "DirectionalLight has direction, no position"
+          - "DirectionalLight shadow ray travels to infinity"
+          - "Zero lights produce ambient-only or black image"
+        dependencies: ["01-04"]
+
+      - id: "03-02"
+        name: "Hard shadows with shadow rays"
+        description: |
+          Implement shadow ray casting from hit points toward lights.
+          Epsilon offset prevents shadow acne.
+        files_to_modify:
+          - src/application/renderer.cpp
+        files_to_create:
+          - tests/application/shadow_test.cpp
+        acceptance_criteria:
+          - "Shadow rays cast from hit_point + epsilon * normal toward each light"
+          - "If any object intersects shadow ray, light contribution is zero"
+          - "Objects beyond the light (t > t_light) don't cast shadows"
+          - "No shadow acne on flat surfaces"
+          - "Self-shadowing on curved surfaces produces smooth terminator"
+        dependencies: ["03-01"]
+
+  # ==============================================================================
+  # PHASE 4: Metal Materials (US-301, US-302)
+  # ==============================================================================
+
+  - id: "04"
+    name: "Metal Materials"
+    user_stories: ["US-301", "US-302"]
+    steps:
+      - id: "04-01"
+        name: "Metal material with mirror and fuzzy reflection"
+        description: |
+          Implement Metal material with reflect() function, albedo tinting,
+          fuzziness parameter, and recursive ray tracing for reflections.
+        files_to_create:
+          - src/domain/materials/metal.h
+          - src/domain/materials/metal.cpp
+          - tests/domain/metal_test.cpp
+        acceptance_criteria:
+          - "Metal reflects rays: R = I - 2*dot(I,N)*N"
+          - "Reflected color attenuated by metal albedo"
+          - "Fuzziness 0 = perfect mirror; fuzziness 1 = very rough"
+          - "Fuzziness clamped to [0, 1]"
+          - "Rays scattered below surface (dot < 0) are absorbed"
+          - "Recursion depth respected; max depth returns black"
+        dependencies: ["03-02"]
+
+  # ==============================================================================
+  # PHASE 5: Transparency and Refraction (US-401, US-402)
+  # ==============================================================================
+
+  - id: "05"
+    name: "Transparency and Refraction"
+    user_stories: ["US-401", "US-402"]
+    steps:
+      - id: "05-01"
+        name: "Dielectric material with Snell's law and Fresnel"
+        description: |
+          Implement Dielectric material with Snell's law refraction, Schlick's
+          Fresnel approximation, and total internal reflection. Hollow glass via
+          negative radius already supported by Sphere.
+        files_to_create:
+          - src/domain/materials/dielectric.h
+          - src/domain/materials/dielectric.cpp
+          - tests/domain/dielectric_test.cpp
+        acceptance_criteria:
+          - "Refraction uses Snell's law: sin(theta_t) = (n1/n2) * sin(theta_i)"
+          - "Schlick's approximation determines reflect vs refract probability"
+          - "Total internal reflection when sin^2(theta_t) > 1.0"
+          - "front_face correctly tracks ray entering vs exiting medium"
+          - "IOR 1.5 = glass; IOR 2.42 = diamond; IOR 1.0 = invisible"
+          - "Hollow glass sphere (negative inner radius) produces thin shell effect"
+        dependencies: ["04-01"]
+
+  # ==============================================================================
+  # PHASE 6: Configurable Camera (US-501, US-601, US-602)
+  # ==============================================================================
+
+  - id: "06"
+    name: "Camera Enhancements and Recursion Depth"
+    user_stories: ["US-501", "US-601", "US-602"]
+    steps:
+      - id: "06-01"
+        name: "Configurable recursion depth and camera parameters"
+        description: |
+          Make max_depth configurable in RenderSettings. Camera already supports
+          lookfrom/lookat/vup/vfov from walking skeleton. Add aspect_ratio support
+          and verify all camera params work correctly.
+        files_to_modify:
+          - src/domain/camera.h
+          - src/domain/camera.cpp
+          - src/application/renderer.h
+          - src/application/renderer.cpp
+        files_to_create:
+          - tests/domain/camera_config_test.cpp
+        acceptance_criteria:
+          - "max_depth configurable (0-100, default 10)"
+          - "Depth 0 returns black (no secondary rays)"
+          - "Increasing depth reveals more reflection bounces"
+          - "Camera vfov adjusts zoom (smaller = more zoom)"
+          - "Camera vup rotates the view"
+          - "Depth 100 with parallel mirrors completes without stack overflow"
+        dependencies: ["05-01"]
+
+      - id: "06-02"
+        name: "Thin lens camera with depth of field"
+        description: |
+          Extend Camera with aperture and focus_distance parameters for
+          depth of field. Random sampling on lens disc.
+        files_to_modify:
+          - src/domain/camera.h
+          - src/domain/camera.cpp
+        files_to_create:
+          - tests/domain/thin_lens_test.cpp
+        acceptance_criteria:
+          - "Camera accepts aperture and focus_distance"
+          - "Ray origins sampled from disc of diameter=aperture"
+          - "All rays for a pixel converge at focal plane"
+          - "Objects at focus_distance are sharp; others are blurred"
+          - "Aperture 0 = pinhole (everything in focus)"
+          - "DoF requires multiple SPP to be visible"
+        dependencies: ["06-01"]
+
+  # ==============================================================================
+  # PHASE 7: Anti-Aliasing (US-701, US-702)
+  # ==============================================================================
+
+  - id: "07"
+    name: "Anti-Aliasing and Sampling"
+    user_stories: ["US-701", "US-702"]
+    steps:
+      - id: "07-01"
+        name: "Random supersampling and stratified sampling"
+        description: |
+          Implement Sampler interface with RandomSampler and StratifiedSampler.
+          Update Renderer to use configurable SPP with sample averaging.
+        files_to_create:
+          - src/application/sampler.h
+          - src/application/sampler.cpp
+          - tests/application/sampler_test.cpp
+        files_to_modify:
+          - src/application/renderer.h
+          - src/application/renderer.cpp
+        acceptance_criteria:
+          - "SPP configurable (1-10000, default 10)"
+          - "Random samples within pixel area [x, x+1) x [y, y+1)"
+          - "Final color is arithmetic mean of all samples"
+          - "Higher SPP = smoother edges"
+          - "Stratified sampler divides pixel into sqrt_spp x sqrt_spp strata"
+          - "Each stratum gets one jittered sample"
+          - "Stratified produces less noise than random at equal SPP"
+        dependencies: ["06-02"]
+
+  # ==============================================================================
+  # PHASE 8: BVH Acceleration (US-801)
+  # ==============================================================================
+
+  - id: "08"
+    name: "BVH Acceleration"
+    user_stories: ["US-801"]
+    steps:
+      - id: "08-01"
+        name: "BVH construction and traversal"
+        description: |
+          Implement BVH as a Shape subclass. Recursive construction with
+          longest-axis midpoint split. Ray traversal skips subtrees on AABB miss.
+        files_to_create:
+          - src/application/bvh.h
+          - src/application/bvh.cpp
+          - tests/application/bvh_test.cpp
+        acceptance_criteria:
+          - "BVH implements Shape interface (hit + bounding_box)"
+          - "BVH vs brute force produces pixel-identical renders"
+          - "BVH provides at least 2x speedup on 50+ objects"
+          - "BVH handles edge cases: 0, 1, overlapping objects"
+          - "Construction uses longest-axis midpoint split"
+          - "Every Shape provides bounding_box()"
+        dependencies: ["02-02", "07-01"]
+
+  # ==============================================================================
+  # PHASE 9: Scene File Loading (US-901)
+  # ==============================================================================
+
+  - id: "09"
+    name: "Scene File Loading"
+    user_stories: ["US-901"]
+    steps:
+      - id: "09-01"
+        name: "YAML scene file parser and CLI"
+        description: |
+          Implement SceneLoader (yaml-cpp), Validator, and CLI argument parsing.
+          Replace hardcoded scene with file-based loading.
+        files_to_create:
+          - src/infrastructure/scene_loader.h
+          - src/infrastructure/scene_loader.cpp
+          - src/infrastructure/validator.h
+          - src/infrastructure/validator.cpp
+          - src/infrastructure/cli.h
+          - src/infrastructure/cli.cpp
+          - scenes/three_spheres.yaml
+          - tests/infrastructure/scene_loader_test.cpp
+          - tests/infrastructure/validator_test.cpp
+        files_to_modify:
+          - src/main.cpp
+        acceptance_criteria:
+          - "CLI accepts YAML file path as argument"
+          - "Camera, lights, materials, objects, render settings parsed from YAML"
+          - "All supported primitives and materials loadable from YAML"
+          - "Undefined material references produce clear error with available names"
+          - "Missing required fields produce clear error messages"
+          - "No arguments prints usage instructions"
+          - "Scene validated before rendering starts"
+        dependencies: ["08-01"]
+
+  # ==============================================================================
+  # PHASE 10: Area Lights (US-1001)
+  # ==============================================================================
+
+  - id: "10"
+    name: "Area Lights"
+    user_stories: ["US-1001"]
+    steps:
+      - id: "10-01"
+        name: "Area light with soft shadows"
+        description: |
+          Implement AreaLight with rectangular geometry and multiple shadow samples.
+          Fraction of unoccluded rays determines shadow softness.
+        files_to_create:
+          - src/domain/lights/area_light.h
+          - src/domain/lights/area_light.cpp
+          - tests/domain/area_light_test.cpp
+        acceptance_criteria:
+          - "AreaLight defined by position, dimensions, normal, color, intensity"
+          - "Multiple shadow rays cast to random points on light surface"
+          - "Fraction of unoccluded rays determines illumination (soft shadows)"
+          - "Visible penumbra around shadows"
+          - "Near-zero size behaves like point light"
+          - "More shadow samples = smoother penumbra"
+        dependencies: ["09-01"]
+
+  # ==============================================================================
+  # PHASE 11: Gamma Correction and Tone Mapping (US-1002)
+  # ==============================================================================
+
+  - id: "11"
+    name: "Gamma Correction and Tone Mapping"
+    user_stories: ["US-1002"]
+    steps:
+      - id: "11-01"
+        name: "Gamma correction and Reinhard tone mapping"
+        description: |
+          Ensure gamma 2.0 correction (sqrt) is properly applied. Add optional
+          Reinhard tone mapping for HDR scenes. NaN guards on output.
+        files_to_modify:
+          - src/application/renderer.cpp
+        files_to_create:
+          - tests/application/tone_mapping_test.cpp
+        acceptance_criteria:
+          - "Gamma 2.0 (sqrt) applied to all pixel colors by default"
+          - "RGB clamped to [0, 255] after gamma"
+          - "Gamma correction visibly brightens midtones vs linear"
+          - "Reinhard tone mapping: color / (1 + color) per channel"
+          - "No NaN or negative values in output"
+        dependencies: ["10-01"]
+
+# ==============================================================================
+# Execution metadata
+# ==============================================================================
+
+validation:
+  status: pending
+  reviewer: null
+  date: null

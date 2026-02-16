@@ -10,6 +10,7 @@ add_executable(nwave_tests
     domain/lambertian_test.cpp
     domain/metal_test.cpp
     domain/dielectric_test.cpp
+    domain/emissive_test.cpp
     domain/point_light_test.cpp
     domain/camera_test.cpp
     application/renderer_test.cpp

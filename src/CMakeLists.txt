@@ -9,9 +9,11 @@ add_library(nwave_domain
     domain/shapes/triangle.cpp
     domain/shapes/triangle_mesh.cpp
     domain/shapes/box.cpp
+    domain/shapes/cylinder.cpp
     domain/materials/lambertian.cpp
     domain/materials/metal.cpp
     domain/materials/dielectric.cpp
+    domain/materials/emissive.cpp
     domain/lights/point_light.cpp
     domain/camera.cpp
     domain/scene.cpp

@@ -1,0 +1,25 @@
+# Build
+build/
+cmake-build-*/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Output images
+*.ppm
+*.png
+
+# Compiled objects
+*.o
+*.a
+*.so
+*.dylib
+
+# Clangd
+.cache/
+compile_commands.json

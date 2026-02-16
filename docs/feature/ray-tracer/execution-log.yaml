@@ -1,0 +1,70 @@
+# Execution Log: ray-tracer
+# Append-only state tracking for DELIVER wave
+
+project_id: ray-tracer
+
+steps:
+  - id: "01-01"
+    name: "Core math primitives and build system"
+    status: COMMIT/PASS
+    tests_before: 0
+    tests_after: 36
+    files_created:
+      - CMakeLists.txt
+      - src/CMakeLists.txt
+      - src/core/vec3.h
+      - src/core/ray.h
+      - src/core/math_utils.h
+      - tests/CMakeLists.txt
+      - tests/core/vec3_test.cpp
+      - tests/core/ray_test.cpp
+
+  - id: "01-02"
+    name: "Shape interface, Sphere, and HitRecord"
+    status: COMMIT/PASS
+    tests_before: 36
+    tests_after: 47
+    files_created:
+      - src/domain/hit_record.h
+      - src/domain/shapes/shape.h
+      - src/domain/shapes/sphere.h
+      - src/domain/shapes/sphere.cpp
+      - tests/domain/sphere_test.cpp
+
+  - id: "01-03"
+    name: "Plane, Lambertian material, and PointLight"
+    status: COMMIT/PASS
+    tests_before: 47
+    tests_after: 65
+    files_created:
+      - src/domain/materials/material.h
+      - src/domain/materials/lambertian.h
+      - src/domain/materials/lambertian.cpp
+      - src/domain/shapes/plane.h
+      - src/domain/shapes/plane.cpp
+      - src/domain/lights/light.h
+      - src/domain/lights/point_light.h
+      - src/domain/lights/point_light.cpp
+      - tests/domain/plane_test.cpp
+      - tests/domain/lambertian_test.cpp
+      - tests/domain/point_light_test.cpp
+
+  - id: "01-04"
+    name: "Camera, Scene, Renderer, PPM output, main"
+    status: COMMIT/PASS
+    tests_before: 65
+    tests_after: 83
+    files_created:
+      - src/domain/camera.h
+      - src/domain/camera.cpp
+      - src/domain/scene.h
+      - src/domain/scene.cpp
+      - src/application/renderer.h
+      - src/application/renderer.cpp
+      - src/infrastructure/ppm_writer.h
+      - src/infrastructure/ppm_writer.cpp
+      - src/main.cpp
+      - tests/domain/camera_test.cpp
+      - tests/application/renderer_test.cpp
+      - tests/infrastructure/ppm_writer_test.cpp
+    notes: "Walking skeleton complete. Produces output.ppm with red sphere on gray plane, shadow, sky gradient."
