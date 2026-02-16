@@ -13,6 +13,7 @@ cmake-build-*/
 # Output images
 *.ppm
 *.png
+!docs/nwave_scene.png
 
 # Compiled objects
 *.o
