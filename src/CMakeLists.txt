@@ -36,6 +36,7 @@ add_library(nwave_infrastructure
     infrastructure/cli_dispatcher.cpp
     infrastructure/validator.cpp
     infrastructure/jolt_physics_simulator.cpp
+    infrastructure/progress_reporter.cpp
 )
 target_include_directories(nwave_infrastructure PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(nwave_infrastructure PUBLIC nwave_application yaml-cpp::yaml-cpp Jolt)

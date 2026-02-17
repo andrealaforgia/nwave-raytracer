@@ -64,13 +64,15 @@ AnimationRenderer::AnimationRenderer(const AnimationConfig& config,
                                      const std::vector<PhysicsProperties>& shape_physics,
                                      std::unique_ptr<PhysicsSimulator> physics,
                                      const Camera& camera,
-                                     WriteCallback write_callback)
+                                     WriteCallback write_callback,
+                                     ProgressReporter* progress)
     : config_(config)
     , scene_(scene)
     , shape_physics_(shape_physics)
     , physics_(std::move(physics))
     , camera_(camera)
-    , write_callback_(std::move(write_callback)) {}
+    , write_callback_(std::move(write_callback))
+    , progress_(progress) {}
 
 int AnimationRenderer::render() {
     const auto& original_shapes = scene_.shapes();
@@ -116,6 +118,10 @@ int AnimationRenderer::render() {
     int steps_per_frame = config_.steps_per_frame();
     double physics_dt = config_.physics_timestep;
 
+    if (progress_) {
+        progress_->start(total_frames);
+    }
+
     for (int frame = 0; frame < total_frames; ++frame) {
         // Step physics
         for (int step = 0; step < steps_per_frame; ++step) {
@@ -135,6 +141,14 @@ int AnimationRenderer::render() {
         // Invoke write callback
         std::string filename = frame_filename(config_.output_directory, frame);
         write_callback_(filename, anim_scene, camera_, camera_.image_width(), 1);
+
+        if (progress_) {
+            progress_->frame_complete(frame + 1);
+        }
+    }
+
+    if (progress_) {
+        progress_->finish();
     }
 
     return total_frames;

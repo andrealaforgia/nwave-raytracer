@@ -26,6 +26,7 @@ add_executable(nwave_tests
     infrastructure/validator_test.cpp
     infrastructure/jolt_physics_simulator_test.cpp
     application/animation_renderer_test.cpp
+    infrastructure/progress_reporter_test.cpp
 )
 
 target_link_libraries(nwave_tests
