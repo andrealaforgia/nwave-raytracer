@@ -116,6 +116,57 @@ TEST_F(CliDispatcherTest, RenderSubcommandUsesDefaultOutputFilename) {
     EXPECT_EQ(captured.spp, 0);
 }
 
+// --- Acceptance test: validate subcommand dispatches to validate handler ---
+
+TEST_F(CliDispatcherTest, ValidateSubcommandDispatchesToHandlerAndReturnsExitCode) {
+    ValidateCommand captured;
+    bool handler_called = false;
+
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_validate_handler([&](const ValidateCommand& cmd) {
+        captured = cmd;
+        handler_called = true;
+        return 0;  // valid scene
+    });
+
+    std::vector<std::string> args = {"nwave", "validate", "scene.yaml"};
+    auto argv = make_argv(args);
+    int rc = dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(rc, 0);
+    ASSERT_TRUE(handler_called);
+    EXPECT_EQ(captured.scene_file, "scene.yaml");
+}
+
+TEST_F(CliDispatcherTest, ValidateSubcommandWithoutFilePrintsErrorAndReturnsNonZero) {
+    int rc = dispatch({"nwave", "validate"});
+
+    std::string error_output = err.str();
+    EXPECT_NE(error_output.find("file"), std::string::npos);
+    EXPECT_NE(rc, 0);
+}
+
+TEST_F(CliDispatcherTest, ValidateSubcommandPropagatesNonZeroExitCode) {
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_validate_handler([&](const ValidateCommand&) {
+        return 2;  // invalid scene
+    });
+
+    std::vector<std::string> args = {"nwave", "validate", "bad_scene.yaml"};
+    auto argv = make_argv(args);
+    int rc = dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(rc, 2);
+}
+
+TEST_F(CliDispatcherTest, UsageTextIncludesValidateSubcommand) {
+    int rc = dispatch({"nwave", "--help"});
+
+    std::string output = out.str();
+    EXPECT_NE(output.find("validate"), std::string::npos);
+    EXPECT_EQ(rc, 0);
+}
+
 TEST_F(CliDispatcherTest, AnimateFlagPreservesLegacyBehavior) {
     bool legacy_called = false;
     auto dispatcher = make_dispatcher();

@@ -11,6 +11,10 @@ void CliDispatcher::set_render_handler(RenderHandler handler) {
     render_handler_ = std::move(handler);
 }
 
+void CliDispatcher::set_validate_handler(ValidateHandler handler) {
+    validate_handler_ = std::move(handler);
+}
+
 void CliDispatcher::set_legacy_handler(LegacyHandler handler) {
     legacy_handler_ = std::move(handler);
 }
@@ -23,6 +27,7 @@ void CliDispatcher::print_usage() {
          << "    --width <N>        Override image width\n"
          << "    --spp <N>          Override samples per pixel\n"
          << "    -o <file>          Output filename (default: output.ppm)\n"
+         << "  validate <file.yaml> Validate a YAML scene (no render)\n"
          << "\n"
          << "Flags:\n"
          << "  --animate            Run legacy animation (360-degree orbit)\n"
@@ -59,6 +64,23 @@ int CliDispatcher::handle_render(int argc, char* argv[]) {
     return 1;
 }
 
+int CliDispatcher::handle_validate(int argc, char* argv[]) {
+    if (argc < 3) {
+        err_ << "Error: validate command requires a scene file\n";
+        return 1;
+    }
+
+    ValidateCommand cmd;
+    cmd.scene_file = argv[2];
+
+    if (validate_handler_) {
+        return validate_handler_(cmd);
+    }
+
+    err_ << "Error: no validate handler configured\n";
+    return 1;
+}
+
 int CliDispatcher::dispatch(int argc, char* argv[]) {
     if (argc < 2) {
         print_usage();
@@ -82,6 +104,10 @@ int CliDispatcher::dispatch(int argc, char* argv[]) {
 
     if (std::strcmp(arg, "render") == 0) {
         return handle_render(argc, argv);
+    }
+
+    if (std::strcmp(arg, "validate") == 0) {
+        return handle_validate(argc, argv);
     }
 
     // Unknown subcommand

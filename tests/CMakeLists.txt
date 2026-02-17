@@ -22,6 +22,8 @@ add_executable(nwave_tests
     infrastructure/ppm_writer_test.cpp
     infrastructure/yaml_scene_loader_test.cpp
     infrastructure/cli_dispatcher_test.cpp
+    domain/transformed_shape_test.cpp
+    infrastructure/validator_test.cpp
 )
 
 target_link_libraries(nwave_tests

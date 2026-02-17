@@ -10,6 +10,7 @@ add_library(nwave_domain
     domain/shapes/triangle_mesh.cpp
     domain/shapes/box.cpp
     domain/shapes/cylinder.cpp
+    domain/shapes/transformed_shape.cpp
     domain/materials/lambertian.cpp
     domain/materials/metal.cpp
     domain/materials/dielectric.cpp
@@ -32,9 +33,10 @@ add_library(nwave_infrastructure
     infrastructure/ppm_writer.cpp
     infrastructure/yaml_scene_loader.cpp
     infrastructure/cli_dispatcher.cpp
+    infrastructure/validator.cpp
 )
 target_include_directories(nwave_infrastructure PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(nwave_infrastructure PUBLIC nwave_application yaml-cpp::yaml-cpp)
+target_link_libraries(nwave_infrastructure PUBLIC nwave_application yaml-cpp::yaml-cpp Jolt)
 
 add_executable(nwave main.cpp)
 target_link_libraries(nwave PRIVATE nwave_infrastructure)

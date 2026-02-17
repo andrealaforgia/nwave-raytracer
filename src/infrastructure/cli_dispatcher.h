@@ -14,8 +14,13 @@ struct RenderCommand {
     std::string output = "output.ppm";
 };
 
+struct ValidateCommand {
+    std::string scene_file;
+};
+
 // Handler types for dependency injection (testability)
 using RenderHandler = std::function<int(const RenderCommand&)>;
+using ValidateHandler = std::function<int(const ValidateCommand&)>;
 using LegacyHandler = std::function<int()>;
 
 class CliDispatcher {
@@ -23,6 +28,7 @@ public:
     CliDispatcher(std::ostream& out, std::ostream& err);
 
     void set_render_handler(RenderHandler handler);
+    void set_validate_handler(ValidateHandler handler);
     void set_legacy_handler(LegacyHandler handler);
 
     int dispatch(int argc, char* argv[]);
@@ -30,10 +36,12 @@ public:
 private:
     void print_usage();
     int handle_render(int argc, char* argv[]);
+    int handle_validate(int argc, char* argv[]);
 
     std::ostream& out_;
     std::ostream& err_;
     RenderHandler render_handler_;
+    ValidateHandler validate_handler_;
     LegacyHandler legacy_handler_;
 };
 

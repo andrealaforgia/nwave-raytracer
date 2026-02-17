@@ -15,6 +15,7 @@
 #include "infrastructure/ppm_writer.h"
 #include "infrastructure/yaml_scene_loader.h"
 #include "infrastructure/cli_dispatcher.h"
+#include "infrastructure/validator.h"
 #include "core/math_utils.h"
 #include <yaml-cpp/yaml.h>
 #include <iostream>
@@ -256,6 +257,36 @@ static int run_render(const RenderCommand& cmd) {
     return 0;
 }
 
+static int run_validate(const ValidateCommand& cmd) {
+    std::ifstream file(cmd.scene_file);
+    if (!file.is_open()) {
+        std::cerr << "Error: cannot open scene file: " << cmd.scene_file << "\n";
+        return 1;
+    }
+
+    std::string yaml_content((std::istreambuf_iterator<char>(file)),
+                              std::istreambuf_iterator<char>());
+
+    SceneValidator validator;
+    auto result = validator.validate(yaml_content);
+
+    if (result.is_valid) {
+        std::cout << "Scene validation passed:\n";
+        std::cout << "  [x] Camera present\n";
+        std::cout << "  [x] Objects present\n";
+        std::cout << "  [x] Lights present\n";
+        std::cout << "  [x] Material references valid\n";
+        std::cout << "  [x] Parameter ranges valid\n";
+    } else {
+        std::cout << "Scene validation failed:\n";
+        for (const auto& error : result.errors) {
+            std::cout << "  [ ] " << error.message << "\n";
+        }
+    }
+
+    return result.is_valid ? 0 : 1;
+}
+
 int main(int argc, char* argv[]) {
     // Preserve legacy behavior: no args runs the default hardcoded scene
     if (argc == 1) {
@@ -264,6 +295,7 @@ int main(int argc, char* argv[]) {
 
     CliDispatcher dispatcher(std::cout, std::cerr);
     dispatcher.set_render_handler(run_render);
+    dispatcher.set_validate_handler(run_validate);
     dispatcher.set_legacy_handler([&]() {
         // --animate is dispatched here
         return run_legacy_animate();
