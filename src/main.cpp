@@ -12,8 +12,10 @@
 #include "domain/lights/point_light.h"
 #include "domain/lights/directional_light.h"
 #include "application/renderer.h"
+#include "application/animation_renderer.h"
 #include "infrastructure/ppm_writer.h"
 #include "infrastructure/yaml_scene_loader.h"
+#include "infrastructure/jolt_physics_simulator.h"
 #include "infrastructure/cli_dispatcher.h"
 #include "infrastructure/validator.h"
 #include "core/math_utils.h"
@@ -225,6 +227,67 @@ static Camera build_camera_with_overrides(const std::string& yaml_content,
     return Camera(lookfrom, lookat, vup, vfov, aspect_ratio, width_override);
 }
 
+static int run_physics_animate(const RenderCommand& cmd) {
+    std::ifstream file(cmd.scene_file);
+    if (!file.is_open()) {
+        std::cerr << "Error: cannot open scene file: " << cmd.scene_file << "\n";
+        return 1;
+    }
+
+    std::string yaml_content((std::istreambuf_iterator<char>(file)),
+                              std::istreambuf_iterator<char>());
+
+    YamlSceneLoader loader;
+    auto result = loader.load(yaml_content);
+
+    if (!result.animation_config.has_value()) {
+        std::cerr << "Error: scene file does not contain animation_config\n";
+        return 1;
+    }
+
+    const AnimationConfig& anim_config = result.animation_config.value();
+
+    Camera camera = build_camera_with_overrides(yaml_content, result.camera, cmd.width);
+
+    // Create output directory
+    std::filesystem::create_directories(anim_config.output_directory);
+
+    // Print physics summary
+    int body_count = static_cast<int>(result.shape_physics.size());
+    int total_steps = anim_config.total_frames() * anim_config.steps_per_frame();
+    std::cout << "Physics: " << body_count << " bodies, " << total_steps << " total steps\n";
+
+    // Create physics simulator
+    auto physics = std::make_unique<JoltPhysicsSimulator>();
+
+    // Render settings
+    int spp = (cmd.spp > 0) ? cmd.spp : 1;
+
+    // Write callback: render scene to PPM
+    WriteCallback write_cb = [spp](const std::string& filename,
+                                    const Scene& scene,
+                                    const Camera& cam,
+                                    int width, int /*spp_hint*/) {
+        Renderer renderer;
+        RenderSettings settings;
+        settings.samples_per_pixel = spp;
+        settings.max_depth = 10;
+
+        auto pixels = renderer.render(cam, scene, settings);
+        write_ppm(filename, pixels, cam.image_width(), cam.image_height());
+    };
+
+    AnimationRenderer anim_renderer(anim_config, result.scene, result.shape_physics,
+                                    std::move(physics), camera, std::move(write_cb));
+    int frames_rendered = anim_renderer.render();
+
+    std::cout << "Rendered " << frames_rendered << " frames to " << anim_config.output_directory << "\n";
+    std::cout << "Run: ffmpeg -framerate " << static_cast<int>(anim_config.render_fps)
+              << " -i " << anim_config.output_directory << "frame_%04d.ppm output.mp4\n";
+
+    return 0;
+}
+
 static int run_render(const RenderCommand& cmd) {
     std::ifstream file(cmd.scene_file);
     if (!file.is_open()) {
@@ -294,7 +357,12 @@ int main(int argc, char* argv[]) {
     }
 
     CliDispatcher dispatcher(std::cout, std::cerr);
-    dispatcher.set_render_handler(run_render);
+    dispatcher.set_render_handler([](const RenderCommand& cmd) {
+        if (cmd.physics_animate) {
+            return run_physics_animate(cmd);
+        }
+        return run_render(cmd);
+    });
     dispatcher.set_validate_handler(run_validate);
     dispatcher.set_legacy_handler([&]() {
         // --animate is dispatched here

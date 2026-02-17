@@ -167,6 +167,54 @@ TEST_F(CliDispatcherTest, UsageTextIncludesValidateSubcommand) {
     EXPECT_EQ(rc, 0);
 }
 
+// --- Acceptance test: --physics-animate flag wired to render handler ---
+
+TEST_F(CliDispatcherTest, PhysicsAnimateFlagParsedAndDispatchedToRenderHandler) {
+    RenderCommand captured;
+    bool handler_called = false;
+
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand& cmd) {
+        captured = cmd;
+        handler_called = true;
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml",
+                                     "--physics-animate", "--spp", "2"};
+    auto argv = make_argv(args);
+    int rc = dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(rc, 0);
+    ASSERT_TRUE(handler_called);
+    EXPECT_TRUE(captured.physics_animate);
+    EXPECT_EQ(captured.scene_file, "scene.yaml");
+    EXPECT_EQ(captured.spp, 2);
+}
+
+TEST_F(CliDispatcherTest, RenderWithoutPhysicsAnimateFlagDefaultsToFalse) {
+    RenderCommand captured;
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand& cmd) {
+        captured = cmd;
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml"};
+    auto argv = make_argv(args);
+    dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_FALSE(captured.physics_animate);
+}
+
+TEST_F(CliDispatcherTest, UsageTextIncludesPhysicsAnimateFlag) {
+    int rc = dispatch({"nwave", "--help"});
+
+    std::string output = out.str();
+    EXPECT_NE(output.find("--physics-animate"), std::string::npos);
+    EXPECT_EQ(rc, 0);
+}
+
 TEST_F(CliDispatcherTest, AnimateFlagPreservesLegacyBehavior) {
     bool legacy_called = false;
     auto dispatcher = make_dispatcher();

@@ -12,6 +12,7 @@ struct RenderCommand {
     int width = 0;       // 0 = use scene default
     int spp = 0;         // 0 = use scene default
     std::string output = "output.ppm";
+    bool physics_animate = false;
 };
 
 struct ValidateCommand {

@@ -27,6 +27,7 @@ void CliDispatcher::print_usage() {
          << "    --width <N>        Override image width\n"
          << "    --spp <N>          Override samples per pixel\n"
          << "    -o <file>          Output filename (default: output.ppm)\n"
+         << "    --physics-animate  Run physics-driven animation\n"
          << "  validate <file.yaml> Validate a YAML scene (no render)\n"
          << "\n"
          << "Flags:\n"
@@ -53,6 +54,8 @@ int CliDispatcher::handle_render(int argc, char* argv[]) {
             cmd.spp = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             cmd.output = argv[++i];
+        } else if (std::strcmp(argv[i], "--physics-animate") == 0) {
+            cmd.physics_animate = true;
         }
     }
 
