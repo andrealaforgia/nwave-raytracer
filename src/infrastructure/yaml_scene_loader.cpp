@@ -4,7 +4,13 @@
 #include "domain/materials/dielectric.h"
 #include "domain/shapes/sphere.h"
 #include "domain/shapes/plane.h"
+#include "domain/shapes/box.h"
+#include "domain/shapes/cylinder.h"
+#include "domain/shapes/triangle.h"
+#include "domain/shapes/triangle_mesh.h"
 #include "domain/lights/point_light.h"
+#include "domain/lights/directional_light.h"
+#include "domain/materials/emissive.h"
 #include <yaml-cpp/yaml.h>
 #include <stdexcept>
 
@@ -35,6 +41,12 @@ std::shared_ptr<Material> create_dielectric(const YAML::Node& node) {
     return std::make_shared<Dielectric>(ior, tint);
 }
 
+std::shared_ptr<Material> create_emissive(const YAML::Node& node) {
+    Color3 color = parse_vec3(node["color"]);
+    double intensity = node["intensity"] ? node["intensity"].as<double>() : 1.0;
+    return std::make_shared<Emissive>(color, intensity);
+}
+
 } // anonymous namespace
 
 std::map<std::string, std::shared_ptr<Material>> YamlSceneLoader::parse_materials(const std::string& yaml_content) {
@@ -57,6 +69,8 @@ std::map<std::string, std::shared_ptr<Material>> YamlSceneLoader::parse_material
             material = create_metal(mat_node);
         } else if (type == "dielectric") {
             material = create_dielectric(mat_node);
+        } else if (type == "emissive") {
+            material = create_emissive(mat_node);
         } else {
             throw std::runtime_error("Unknown material type: " + type);
         }
@@ -99,8 +113,51 @@ SceneLoadResult YamlSceneLoader::load(const std::string& yaml_content) {
                 Point3 point = parse_vec3(obj_node["point"]);
                 Vec3 normal = parse_vec3(obj_node["normal"]);
                 scene.add_shape(std::make_shared<Plane>(point, normal, mat_ptr));
+            } else if (type == "box") {
+                Point3 min_corner = parse_vec3(obj_node["min"]);
+                Point3 max_corner = parse_vec3(obj_node["max"]);
+                scene.add_shape(std::make_shared<Box>(min_corner, max_corner, mat_ptr));
+            } else if (type == "cylinder") {
+                Point3 center = parse_vec3(obj_node["center"]);
+                double radius = obj_node["radius"].as<double>();
+                double height = obj_node["height"].as<double>();
+                scene.add_shape(std::make_shared<Cylinder>(center, radius, height, mat_ptr));
+            } else if (type == "triangle") {
+                Point3 v0 = parse_vec3(obj_node["v0"]);
+                Point3 v1 = parse_vec3(obj_node["v1"]);
+                Point3 v2 = parse_vec3(obj_node["v2"]);
+                scene.add_shape(std::make_shared<Triangle>(v0, v1, v2, mat_ptr));
+            } else if (type == "triangle_mesh") {
+                const auto& verts_node = obj_node["vertices"];
+                std::vector<Point3> vertices;
+                for (const auto& v : verts_node) {
+                    vertices.push_back(parse_vec3(v));
+                }
+
+                const auto& normals_node = obj_node["normals"];
+                std::vector<Vec3> normals;
+                for (const auto& n : normals_node) {
+                    normals.push_back(parse_vec3(n));
+                }
+
+                const auto& indices_node = obj_node["indices"];
+                std::vector<int> vertex_indices;
+                for (const auto& face : indices_node) {
+                    vertex_indices.push_back(face[0].as<int>());
+                    vertex_indices.push_back(face[1].as<int>());
+                    vertex_indices.push_back(face[2].as<int>());
+                }
+
+                // Use same indices for normals (per-vertex normals)
+                std::vector<int> normal_indices = vertex_indices;
+
+                scene.add_shape(std::make_shared<TriangleMesh>(
+                    std::move(vertices), std::move(normals),
+                    std::move(vertex_indices), std::move(normal_indices), mat_ptr));
             } else {
-                throw std::runtime_error("Unknown object type: " + type);
+                throw std::runtime_error(
+                    "Unknown object type: " + type +
+                    ". Supported types: sphere, plane, box, cylinder, triangle, triangle_mesh");
             }
         }
     }
@@ -116,6 +173,11 @@ SceneLoadResult YamlSceneLoader::load(const std::string& yaml_content) {
                 Color3 color = parse_vec3(light_node["color"]);
                 double intensity = light_node["intensity"].as<double>();
                 scene.add_light(std::make_shared<PointLight>(position, color, intensity));
+            } else if (type == "directional") {
+                Vec3 direction = parse_vec3(light_node["direction"]);
+                Color3 color = parse_vec3(light_node["color"]);
+                double intensity = light_node["intensity"].as<double>();
+                scene.add_light(std::make_shared<DirectionalLight>(direction, color, intensity));
             } else {
                 throw std::runtime_error("Unknown light type: " + type);
             }

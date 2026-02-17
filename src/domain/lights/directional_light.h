@@ -11,6 +11,10 @@ public:
 
     LightSample sample(const Point3& hit_point) const override;
 
+    const Vec3& direction() const { return direction_; }
+    const Color3& color() const { return color_; }
+    double intensity() const { return intensity_; }
+
 private:
     Vec3 direction_; // direction the light travels (away from source)
     Color3 color_;

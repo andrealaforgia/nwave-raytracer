@@ -13,8 +13,12 @@
 #include "domain/lights/directional_light.h"
 #include "application/renderer.h"
 #include "infrastructure/ppm_writer.h"
+#include "infrastructure/yaml_scene_loader.h"
+#include "infrastructure/cli_dispatcher.h"
 #include "core/math_utils.h"
+#include <yaml-cpp/yaml.h>
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <vector>
 #include <string>
@@ -22,7 +26,6 @@
 #include <sstream>
 #include <iomanip>
 #include <filesystem>
-#include <cstring>
 
 using namespace nwave;
 
@@ -75,8 +78,6 @@ static Scene build_scene() {
 
     Scene scene;
 
-    // Store materials in scene so they outlive this function
-    // (shared_ptrs captured by the shapes via raw pointer — materials must stay alive)
     static std::vector<std::shared_ptr<Material>> materials;
     materials = {white_metal, black_metal, green_glass, red_mat, blue_mat, orange_mat, purple_mat};
 
@@ -125,80 +126,148 @@ static Scene build_scene() {
     return scene;
 }
 
-int main(int argc, char* argv[]) {
-    bool animate = (argc > 1 && std::strcmp(argv[1], "--animate") == 0);
-
+static int run_legacy_single_frame() {
     Scene scene = build_scene();
     Renderer renderer;
-
-    // Center of 'a' letter (orbit target)
     Point3 lookat(0, 0.3, 0.5);
 
-    if (!animate) {
-        // === Single frame (4K) ===
+    Camera camera(
+        Point3(2, 3, 6), lookat,
+        Vec3(0, 1, 0), 38.0, 16.0 / 9.0, 3840);
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 48;
+    settings.max_depth = 12;
+
+    std::cout << "Rendering nWave chessboard scene (" << camera.image_width()
+              << "x" << camera.image_height() << ", " << settings.samples_per_pixel
+              << " SPP)...\n";
+    std::cout << "Scene: " << scene.shapes().size() << " objects, "
+              << scene.lights().size() << " lights\n";
+
+    auto pixels = renderer.render(camera, scene, settings);
+    write_ppm("nwave_scene.ppm", pixels, camera.image_width(), camera.image_height());
+    std::cout << "Done! Saved nwave_scene.ppm\n";
+    return 0;
+}
+
+static int run_legacy_animate() {
+    Scene scene = build_scene();
+    Renderer renderer;
+    Point3 lookat(0, 0.3, 0.5);
+
+    std::filesystem::create_directories("frames");
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 16;
+    settings.max_depth = 10;
+
+    Point3 cam_start(2, 3, 6);
+    double cam_height = cam_start.y();
+    double dx = cam_start.x() - lookat.x();
+    double dz = cam_start.z() - lookat.z();
+    double radius = std::sqrt(dx * dx + dz * dz);
+    double start_angle = std::atan2(dx, dz);
+
+    int total_frames = 720;
+    double angle_step = degrees_to_radians(0.5);
+
+    std::cout << "Animation: " << total_frames << " frames, 800x450, "
+              << settings.samples_per_pixel << " SPP\n";
+    std::cout << "Orbit radius: " << radius << ", height: " << cam_height << "\n";
+    std::cout << "Scene: " << scene.shapes().size() << " objects, "
+              << scene.lights().size() << " lights\n";
+
+    for (int frame = 0; frame < total_frames; ++frame) {
+        double angle = start_angle + frame * angle_step;
+        double cx = lookat.x() + radius * std::sin(angle);
+        double cz = lookat.z() + radius * std::cos(angle);
+
         Camera camera(
-            Point3(2, 3, 6), lookat,
-            Vec3(0, 1, 0), 38.0, 16.0 / 9.0, 3840);
-
-        RenderSettings settings;
-        settings.samples_per_pixel = 48;
-        settings.max_depth = 12;
-
-        std::cout << "Rendering nWave chessboard scene (" << camera.image_width()
-                  << "x" << camera.image_height() << ", " << settings.samples_per_pixel
-                  << " SPP)...\n";
-        std::cout << "Scene: " << scene.shapes().size() << " objects, "
-                  << scene.lights().size() << " lights\n";
+            Point3(cx, cam_height, cz), lookat,
+            Vec3(0, 1, 0), 38.0, 16.0 / 9.0, 800);
 
         auto pixels = renderer.render(camera, scene, settings);
-        write_ppm("nwave_scene.ppm", pixels, camera.image_width(), camera.image_height());
-        std::cout << "Done! Saved nwave_scene.ppm\n";
 
-    } else {
-        // === Animation: 360-degree orbit ===
-        std::filesystem::create_directories("frames");
+        std::ostringstream filename;
+        filename << "frames/frame_" << std::setfill('0') << std::setw(4) << frame << ".ppm";
+        write_ppm(filename.str(), pixels, camera.image_width(), camera.image_height());
 
-        RenderSettings settings;
-        settings.samples_per_pixel = 16;
-        settings.max_depth = 10;
+        std::cout << "\rFrame " << (frame + 1) << "/" << total_frames << std::flush;
+    }
+    std::cout << "\nAll frames rendered! Creating video...\n";
+    std::cout << "Run: ffmpeg -framerate 30 -i frames/frame_%04d.ppm -c:v libx264 -pix_fmt yuv420p nwave_orbit.mp4\n";
+    return 0;
+}
 
-        // Compute orbit radius from current camera position
-        Point3 cam_start(2, 3, 6);
-        double cam_height = cam_start.y();
-        double dx = cam_start.x() - lookat.x();
-        double dz = cam_start.z() - lookat.z();
-        double radius = std::sqrt(dx * dx + dz * dz);
-        double start_angle = std::atan2(dx, dz); // angle in radians
-
-        int total_frames = 720;
-        double angle_step = degrees_to_radians(0.5);
-
-        std::cout << "Animation: " << total_frames << " frames, 800x450, "
-                  << settings.samples_per_pixel << " SPP\n";
-        std::cout << "Orbit radius: " << radius << ", height: " << cam_height << "\n";
-        std::cout << "Scene: " << scene.shapes().size() << " objects, "
-                  << scene.lights().size() << " lights\n";
-
-        for (int frame = 0; frame < total_frames; ++frame) {
-            double angle = start_angle + frame * angle_step;
-            double cx = lookat.x() + radius * std::sin(angle);
-            double cz = lookat.z() + radius * std::cos(angle);
-
-            Camera camera(
-                Point3(cx, cam_height, cz), lookat,
-                Vec3(0, 1, 0), 38.0, 16.0 / 9.0, 800);
-
-            auto pixels = renderer.render(camera, scene, settings);
-
-            std::ostringstream filename;
-            filename << "frames/frame_" << std::setfill('0') << std::setw(4) << frame << ".ppm";
-            write_ppm(filename.str(), pixels, camera.image_width(), camera.image_height());
-
-            std::cout << "\rFrame " << (frame + 1) << "/" << total_frames << std::flush;
-        }
-        std::cout << "\nAll frames rendered! Creating video...\n";
-        std::cout << "Run: ffmpeg -framerate 30 -i frames/frame_%04d.ppm -c:v libx264 -pix_fmt yuv420p nwave_orbit.mp4\n";
+static Camera build_camera_with_overrides(const std::string& yaml_content,
+                                          const Camera& base_camera,
+                                          int width_override) {
+    if (width_override <= 0) {
+        return base_camera;
     }
 
+    // Re-parse YAML to get camera parameters for reconstruction with new width
+    YAML::Node root = YAML::Load(yaml_content);
+    const auto& cam = root["camera"];
+
+    auto parse_vec3 = [](const YAML::Node& node) {
+        return Vec3(node[0].as<double>(), node[1].as<double>(), node[2].as<double>());
+    };
+
+    Point3 lookfrom = parse_vec3(cam["lookfrom"]);
+    Point3 lookat = parse_vec3(cam["lookat"]);
+    Vec3 vup = parse_vec3(cam["vup"]);
+    double vfov = cam["vfov"].as<double>();
+    double aspect_ratio = cam["aspect_ratio"] ? cam["aspect_ratio"].as<double>() : 16.0 / 9.0;
+
+    return Camera(lookfrom, lookat, vup, vfov, aspect_ratio, width_override);
+}
+
+static int run_render(const RenderCommand& cmd) {
+    std::ifstream file(cmd.scene_file);
+    if (!file.is_open()) {
+        std::cerr << "Error: cannot open scene file: " << cmd.scene_file << "\n";
+        return 1;
+    }
+
+    std::string yaml_content((std::istreambuf_iterator<char>(file)),
+                              std::istreambuf_iterator<char>());
+
+    YamlSceneLoader loader;
+    auto result = loader.load(yaml_content);
+
+    Camera camera = build_camera_with_overrides(yaml_content, result.camera, cmd.width);
+
+    RenderSettings settings;
+    settings.samples_per_pixel = (cmd.spp > 0) ? cmd.spp : 16;
+    settings.max_depth = 10;
+
+    std::cout << "Rendering scene from " << cmd.scene_file << " ("
+              << camera.image_width() << "x" << camera.image_height()
+              << ", " << settings.samples_per_pixel << " SPP)...\n";
+    std::cout << "Scene: " << result.scene.shapes().size() << " objects, "
+              << result.scene.lights().size() << " lights\n";
+
+    Renderer renderer;
+    auto pixels = renderer.render(camera, result.scene, settings);
+    write_ppm(cmd.output, pixels, camera.image_width(), camera.image_height());
+    std::cout << "Done! Saved " << cmd.output << "\n";
     return 0;
+}
+
+int main(int argc, char* argv[]) {
+    // Preserve legacy behavior: no args runs the default hardcoded scene
+    if (argc == 1) {
+        return run_legacy_single_frame();
+    }
+
+    CliDispatcher dispatcher(std::cout, std::cerr);
+    dispatcher.set_render_handler(run_render);
+    dispatcher.set_legacy_handler([&]() {
+        // --animate is dispatched here
+        return run_legacy_animate();
+    });
+
+    return dispatcher.dispatch(argc, argv);
 }
