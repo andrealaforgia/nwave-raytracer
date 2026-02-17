@@ -2,6 +2,7 @@ add_executable(nwave_tests
     core/vec3_test.cpp
     core/ray_test.cpp
     core/aabb_test.cpp
+    core/quaternion_test.cpp
     domain/sphere_test.cpp
     domain/plane_test.cpp
     domain/triangle_test.cpp
