@@ -1,6 +1,6 @@
 # nwave-raytracer
 
-A Whitted-style recursive ray tracer written in C++17, built from scratch using the [nWave](nwave.ai) methodology (Research → Discuss → Design → Deliver).
+A Whitted-style recursive ray tracer written in C++17, built from scratch using the [nWave](https://nwave.ai) methodology (Research → Discuss → Design → Deliver).
 
 ![nWave scene](docs/nwave_scene.png)
 
