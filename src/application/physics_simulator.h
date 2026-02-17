@@ -35,6 +35,7 @@ public:
     virtual void step(double dt) = 0;
     virtual PhysicsTransform get_transform(int body_id) const = 0;
     virtual void set_gravity(const Vec3& gravity) = 0;
+    virtual void wake_all() = 0;
 };
 
 } // namespace nwave

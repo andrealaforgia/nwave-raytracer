@@ -109,6 +109,9 @@ PhysicsProperties parse_physics(const YAML::Node& physics_node) {
     if (physics_node["restitution"]) {
         props.restitution = physics_node["restitution"].as<double>();
     }
+    if (physics_node["start_asleep"]) {
+        props.start_asleep = physics_node["start_asleep"].as<bool>();
+    }
     return props;
 }
 
@@ -122,6 +125,9 @@ std::optional<AnimationConfig> parse_animation_config(const YAML::Node& anim_nod
     config.render_fps = anim_node["render_fps"].as<double>();
     if (anim_node["output_directory"]) {
         config.output_directory = anim_node["output_directory"].as<std::string>();
+    }
+    if (anim_node["wake_frame"]) {
+        config.wake_frame = anim_node["wake_frame"].as<int>();
     }
     return config;
 }

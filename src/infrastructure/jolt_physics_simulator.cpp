@@ -162,16 +162,16 @@ JPH::ShapeRefC create_collision_shape(const PhysicsBodyDesc& desc) {
         return new JPH::SphereShape(static_cast<float>(desc.dimensions.x()));
     case PhysicsShapeType::BOX:
         return new JPH::BoxShape(JPH::Vec3(
-            static_cast<float>(desc.dimensions.x() * 0.5),
-            static_cast<float>(desc.dimensions.y() * 0.5),
-            static_cast<float>(desc.dimensions.z() * 0.5)));
+            static_cast<float>(desc.dimensions.x()),
+            static_cast<float>(desc.dimensions.y()),
+            static_cast<float>(desc.dimensions.z())));
     case PhysicsShapeType::PLANE: {
         static constexpr float plane_half_extent = 1000.0f;
         JPH::Plane plane(JPH::Vec3(0.0f, 1.0f, 0.0f), 0.0f);
         return new JPH::PlaneShape(plane, nullptr, plane_half_extent);
     }
     case PhysicsShapeType::CYLINDER: {
-        float half_height = static_cast<float>(desc.dimensions.y() * 0.5);
+        float half_height = static_cast<float>(desc.dimensions.y());
         float radius = static_cast<float>(desc.dimensions.x());
         return new JPH::CylinderShape(half_height, radius);
     }
@@ -218,9 +218,15 @@ int JoltPhysicsSimulator::add_body(const PhysicsBodyDesc& desc) {
             static_cast<float>(desc.properties.initial_velocity.z()));
     }
 
-    JPH::EActivation activation = (desc.properties.body_type == BodyType::STATIC)
-        ? JPH::EActivation::DontActivate
-        : JPH::EActivation::Activate;
+    // Static bodies and bodies marked start_asleep are not activated.
+    // Sleeping dynamic bodies wake on contact, so e.g. W-letter blocks
+    // stay in place until the bowling ball hits them.
+    JPH::EActivation activation;
+    if (desc.properties.body_type == BodyType::STATIC || desc.properties.start_asleep) {
+        activation = JPH::EActivation::DontActivate;
+    } else {
+        activation = JPH::EActivation::Activate;
+    }
 
     JPH::BodyID body_id = body_interface.CreateAndAddBody(body_settings, activation);
     if (body_id.IsInvalid()) {
@@ -268,6 +274,15 @@ void JoltPhysicsSimulator::set_gravity(const Vec3& gravity) {
         static_cast<float>(gravity.x()),
         static_cast<float>(gravity.y()),
         static_cast<float>(gravity.z())));
+}
+
+void JoltPhysicsSimulator::wake_all() {
+    JPH::BodyInterface& body_interface = impl_->physics_system.GetBodyInterface();
+    for (const auto& id : impl_->body_ids) {
+        if (!body_interface.IsActive(id)) {
+            body_interface.ActivateBody(id);
+        }
+    }
 }
 
 } // namespace nwave

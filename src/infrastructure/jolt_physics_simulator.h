@@ -28,6 +28,7 @@ public:
     void step(double dt) override;
     PhysicsTransform get_transform(int body_id) const override;
     void set_gravity(const Vec3& gravity) override;
+    void wake_all() override;
 
 private:
     struct Impl;

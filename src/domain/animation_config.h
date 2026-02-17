@@ -11,6 +11,7 @@ struct AnimationConfig {
     double physics_timestep;
     double render_fps;
     std::string output_directory = "frames/";
+    int wake_frame = -1; // frame at which all sleeping bodies are woken (-1 = disabled)
 
     int total_frames() const {
         return static_cast<int>(std::ceil(duration * render_fps));

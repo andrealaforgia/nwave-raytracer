@@ -62,6 +62,8 @@ public:
         gravity_ = gravity;
     }
 
+    void wake_all() override {}
+
     // Recorded calls for verification
     std::vector<AddBodyCall> add_body_calls;
     std::vector<StepCall> step_calls;
@@ -135,14 +137,15 @@ TEST(AnimationRendererAcceptance, RendersAnimationWithPhysicsSimulation) {
     EXPECT_EQ(static_cast<int>(physics_ptr->step_calls.size()), 100);
 
     // AC3: TransformedShape transforms updated from physics each frame
-    // The dynamic box (body 1) should have get_transform called once per frame = 10 times
+    // The dynamic box (body 1) should have get_transform called:
+    //   1 time for initial transform capture + 10 times (once per frame) = 11
     int dynamic_body_transform_reads = 0;
     for (int id : physics_ptr->get_transform_calls) {
         if (id == 1) { // body id 1 = the dynamic box
             dynamic_body_transform_reads++;
         }
     }
-    EXPECT_EQ(dynamic_body_transform_reads, 10);
+    EXPECT_EQ(dynamic_body_transform_reads, 11);
 
     // AC4: Write callback invoked once per frame with valid filename
     ASSERT_EQ(static_cast<int>(written_filenames.size()), 10);

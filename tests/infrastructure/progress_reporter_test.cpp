@@ -34,6 +34,7 @@ public:
         return PhysicsTransform{};
     }
     void set_gravity(const Vec3& /*gravity*/) override {}
+    void wake_all() override {}
 private:
     int next_id_ = 0;
     std::map<int, PhysicsTransform> transforms_;

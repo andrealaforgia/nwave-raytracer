@@ -104,6 +104,19 @@ int AnimationRenderer::render() {
         }
     }
 
+    // Capture initial physics transforms so we can compute relative deltas.
+    // The inner shapes are defined in world space, so the TransformedShape must
+    // encode only the CHANGE from the initial position (identity at frame 0).
+    std::vector<Matrix4x4> initial_inv(shape_count);
+    for (int i = 0; i < shape_count; ++i) {
+        if (is_dynamic[i]) {
+            PhysicsTransform init_t = physics_->get_transform(body_ids[i]);
+            Matrix4x4 init_mat = Matrix4x4::from_translation_rotation(
+                init_t.position, init_t.rotation);
+            initial_inv[i] = init_mat.inverse();
+        }
+    }
+
     // Build the animation scene: replace dynamic shapes with their TransformedShape wrappers
     Scene anim_scene;
     for (int i = 0; i < shape_count; ++i) {
@@ -128,27 +141,35 @@ int AnimationRenderer::render() {
     }
 
     for (int frame = 0; frame < total_frames; ++frame) {
-        // Step physics
-        for (int step = 0; step < steps_per_frame; ++step) {
-            physics_->step(physics_dt);
-        }
-
-        // Update transforms for dynamic shapes
+        // Update transforms for dynamic shapes using relative delta
         for (int i = 0; i < shape_count; ++i) {
             if (is_dynamic[i]) {
                 PhysicsTransform phys_transform = physics_->get_transform(body_ids[i]);
-                Matrix4x4 mat = Matrix4x4::from_translation_rotation(
+                Matrix4x4 current = Matrix4x4::from_translation_rotation(
                     phys_transform.position, phys_transform.rotation);
-                transformed_shapes[i]->set_transform(mat);
+                // Relative transform: current * inverse(initial)
+                // At frame 0 this is identity, so shapes render at original positions
+                Matrix4x4 relative = current * initial_inv[i];
+                transformed_shapes[i]->set_transform(relative);
             }
         }
 
-        // Invoke write callback
+        // Render frame
         std::string filename = frame_filename(config_.output_directory, frame);
         write_callback_(filename, anim_scene, camera_, camera_.image_width(), 1);
 
         if (progress_) {
             progress_->frame_complete(frame + 1);
+        }
+
+        // Step physics AFTER rendering so frame 0 shows the undisturbed scene
+        for (int step = 0; step < steps_per_frame; ++step) {
+            physics_->step(physics_dt);
+        }
+
+        // Wake all sleeping bodies at the configured frame (ensures all blocks fall)
+        if (frame == config_.wake_frame) {
+            physics_->wake_all();
         }
     }
 
