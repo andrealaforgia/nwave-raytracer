@@ -27,7 +27,8 @@ int SceneValidator::levenshtein_distance(const std::string& a, const std::string
     return dp[m][n];
 }
 
-ValidationResult SceneValidator::validate(const std::string& yaml_content) {
+ValidationResult SceneValidator::validate(const std::string& yaml_content,
+                                          bool physics_animate) {
     ValidationResult result;
     YAML::Node root = YAML::Load(yaml_content);
 
@@ -99,6 +100,31 @@ ValidationResult SceneValidator::validate(const std::string& yaml_content) {
                         result.add_error(oss.str());
                     }
                 }
+                if (physics["friction"]) {
+                    double friction = physics["friction"].as<double>();
+                    if (friction < 0.0 || friction > 1.0) {
+                        std::ostringstream oss;
+                        oss << "Object '" << obj_name << "' has friction out of [0, 1]: " << friction;
+                        result.add_error(oss.str());
+                    }
+                }
+                if (physics["restitution"]) {
+                    double restitution = physics["restitution"].as<double>();
+                    if (restitution < 0.0 || restitution > 1.0) {
+                        std::ostringstream oss;
+                        oss << "Object '" << obj_name << "' has restitution out of [0, 1]: " << restitution;
+                        result.add_error(oss.str());
+                    }
+                }
+                // Dynamic TriangleMesh is not supported (concave mesh must be static)
+                std::string body_type_str = physics["body_type"]
+                    ? physics["body_type"].as<std::string>() : "static";
+                if (obj_type == "triangle_mesh" && body_type_str == "dynamic") {
+                    std::ostringstream oss;
+                    oss << "Object '" << obj_name
+                        << "': concave triangle_mesh must be static, not dynamic";
+                    result.add_error(oss.str());
+                }
             }
         }
     }
@@ -107,6 +133,15 @@ ValidationResult SceneValidator::validate(const std::string& yaml_content) {
     const auto& lights_node = root["lights"];
     if (!lights_node || !lights_node.IsSequence() || lights_node.size() == 0) {
         result.add_error("Scene requires at least 1 light");
+    }
+
+    // Check animation section when physics-animate mode is requested
+    if (physics_animate) {
+        const auto& animation_node = root["animation"];
+        if (!animation_node || animation_node.IsNull()) {
+            result.add_error(
+                "Missing 'animation' section required for physics-animate mode");
+        }
     }
 
     return result;

@@ -27,6 +27,25 @@ protected:
         desc.properties.friction = 0.5;
         return desc;
     }
+
+    PhysicsBodyDesc make_box_from_min_max(Point3 min, Point3 max, BodyType body_type,
+                                           double restitution = 0.3, double friction = 0.5) {
+        PhysicsBodyDesc desc;
+        desc.shape_type = PhysicsShapeType::BOX;
+        desc.position = Point3(
+            (min.x() + max.x()) * 0.5,
+            (min.y() + max.y()) * 0.5,
+            (min.z() + max.z()) * 0.5);
+        desc.dimensions = Vec3(
+            max.x() - min.x(),
+            max.y() - min.y(),
+            max.z() - min.z());
+        desc.properties.body_type = body_type;
+        desc.properties.mass = 1.0;
+        desc.properties.restitution = restitution;
+        desc.properties.friction = friction;
+        return desc;
+    }
 };
 
 TEST_F(JoltPhysicsSimulatorTest, sphere_falls_below_y1_after_60_steps) {
@@ -112,4 +131,74 @@ TEST_F(JoltPhysicsSimulatorTest, new_simulator_has_no_state_from_previous_instan
     auto transform = sim2.get_transform(sphere_id);
     EXPECT_NEAR(transform.position.y(), 5.0, 0.1)
         << "New simulator instance should start fresh with no state from previous instance";
+}
+
+TEST_F(JoltPhysicsSimulatorTest, box_from_min_max_creates_body_at_center_with_correct_half_extents) {
+    JoltPhysicsSimulator sim;
+    sim.set_gravity(Vec3(0.0, 0.0, 0.0));
+
+    // Box defined by min=[2,0,-0.5] max=[3,1.5,0.5]
+    // center = [2.5, 0.75, 0], half-extents = [0.5, 0.75, 0.5]
+    // dimensions (full extents) = [1.0, 1.5, 1.0]
+    auto box_id = sim.add_body(make_box_from_min_max(
+        Point3(2.0, 0.0, -0.5), Point3(3.0, 1.5, 0.5), BodyType::DYNAMIC));
+
+    auto transform = sim.get_transform(box_id);
+    EXPECT_NEAR(transform.position.x(), 2.5, 0.01)
+        << "Box center x should be (2+3)/2 = 2.5";
+    EXPECT_NEAR(transform.position.y(), 0.75, 0.01)
+        << "Box center y should be (0+1.5)/2 = 0.75";
+    EXPECT_NEAR(transform.position.z(), 0.0, 0.01)
+        << "Box center z should be (-0.5+0.5)/2 = 0.0";
+}
+
+TEST_F(JoltPhysicsSimulatorTest, sphere_collision_pushes_box_from_original_position) {
+    JoltPhysicsSimulator sim;
+    sim.set_gravity(Vec3(0.0, 0.0, 0.0));
+
+    // Dynamic box at center [5.0, 0.0, 0.0] with full extents [1.0, 1.0, 1.0]
+    auto box_desc = make_box_from_min_max(
+        Point3(4.5, -0.5, -0.5), Point3(5.5, 0.5, 0.5), BodyType::DYNAMIC, 0.8, 0.3);
+    auto box_id = sim.add_body(box_desc);
+
+    // Dynamic sphere at origin with velocity toward the box
+    auto sphere_desc = make_sphere(0.5, Point3(0.0, 0.0, 0.0), BodyType::DYNAMIC, 0.8, 0.3);
+    sphere_desc.properties.initial_velocity = Vec3(10.0, 0.0, 0.0);
+    auto sphere_id = sim.add_body(sphere_desc);
+
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 120; ++i) {
+        sim.step(dt);
+    }
+
+    auto box_transform = sim.get_transform(box_id);
+    EXPECT_GT(box_transform.position.x(), 5.5)
+        << "Box should be pushed beyond its original position by sphere collision";
+}
+
+TEST_F(JoltPhysicsSimulatorTest, sphere_velocity_changes_after_box_collision) {
+    JoltPhysicsSimulator sim;
+    sim.set_gravity(Vec3(0.0, 0.0, 0.0));
+
+    // Dynamic box at x=5 with full extents [1.0, 1.0, 1.0]
+    auto box_desc = make_box_from_min_max(
+        Point3(4.5, -0.5, -0.5), Point3(5.5, 0.5, 0.5), BodyType::DYNAMIC, 0.8, 0.3);
+    auto box_id = sim.add_body(box_desc);
+
+    // Sphere at origin moving toward box at x velocity = 10
+    auto sphere_desc = make_sphere(0.5, Point3(0.0, 0.0, 0.0), BodyType::DYNAMIC, 0.8, 0.3);
+    sphere_desc.properties.initial_velocity = Vec3(10.0, 0.0, 0.0);
+    auto sphere_id = sim.add_body(sphere_desc);
+
+    // Without collision, after 2 seconds sphere would be at x=20
+    // With collision and energy transfer, sphere should travel less distance
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 120; ++i) {
+        sim.step(dt);
+    }
+
+    auto sphere_transform = sim.get_transform(sphere_id);
+    double free_travel_x = 10.0 * 2.0; // velocity * time = 20.0
+    EXPECT_LT(sphere_transform.position.x(), free_travel_x)
+        << "Sphere should travel less than free-travel distance due to energy transfer to box";
 }

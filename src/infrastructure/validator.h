@@ -22,7 +22,8 @@ struct ValidationResult {
 
 class SceneValidator {
 public:
-    ValidationResult validate(const std::string& yaml_content);
+    ValidationResult validate(const std::string& yaml_content,
+                              bool physics_animate = false);
 
 private:
     static int levenshtein_distance(const std::string& a, const std::string& b);
