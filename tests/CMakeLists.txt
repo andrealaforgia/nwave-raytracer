@@ -18,6 +18,7 @@ add_executable(nwave_tests
     application/renderer_test.cpp
     application/sampling_test.cpp
     infrastructure/ppm_writer_test.cpp
+    infrastructure/yaml_scene_loader_test.cpp
 )
 
 target_link_libraries(nwave_tests

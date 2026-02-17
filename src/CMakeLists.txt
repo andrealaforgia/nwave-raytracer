@@ -30,6 +30,7 @@ target_link_libraries(nwave_application PUBLIC nwave_domain)
 
 add_library(nwave_infrastructure
     infrastructure/ppm_writer.cpp
+    infrastructure/yaml_scene_loader.cpp
 )
 target_include_directories(nwave_infrastructure PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(nwave_infrastructure PUBLIC nwave_application yaml-cpp::yaml-cpp)
