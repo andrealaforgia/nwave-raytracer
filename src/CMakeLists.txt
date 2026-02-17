@@ -25,6 +25,7 @@ target_link_libraries(nwave_domain PUBLIC nwave_core)
 
 add_library(nwave_application
     application/renderer.cpp
+    application/animation_renderer.cpp
 )
 target_include_directories(nwave_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(nwave_application PUBLIC nwave_domain)
