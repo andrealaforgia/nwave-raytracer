@@ -15,6 +15,7 @@ add_library(nwave_domain
     domain/materials/dielectric.cpp
     domain/materials/emissive.cpp
     domain/lights/point_light.cpp
+    domain/lights/directional_light.cpp
     domain/camera.cpp
     domain/scene.cpp
 )
