@@ -24,6 +24,7 @@ add_executable(nwave_tests
     infrastructure/cli_dispatcher_test.cpp
     domain/transformed_shape_test.cpp
     infrastructure/validator_test.cpp
+    infrastructure/jolt_physics_simulator_test.cpp
 )
 
 target_link_libraries(nwave_tests
