@@ -279,5 +279,117 @@ TEST(AnimationRenderer, AddsBodiesForAllShapes) {
     EXPECT_EQ(physics_ptr->add_body_calls[1].desc.properties.body_type, BodyType::DYNAMIC);
 }
 
+// ==========================================================
+// ACCEPTANCE TEST: Multiple physics steps per render frame (07-03)
+// ==========================================================
+
+TEST(AnimationRendererAcceptance, StepsPhysicsMultipleTimesPerFrameAtVariousRatios) {
+    // AC: 60Hz physics / 30fps render = 2 steps per frame
+    //     120Hz physics / 30fps render = 4 steps per frame
+    //     Total physics time matches animation duration within one timestep
+    struct Scenario {
+        double physics_hz;
+        double render_fps;
+        double duration;
+        int expected_steps_per_frame;
+    };
+
+    std::vector<Scenario> scenarios = {
+        {60.0,  30.0, 1.0, 2},
+        {120.0, 30.0, 1.0, 4},
+    };
+
+    for (const auto& s : scenarios) {
+        double physics_timestep = 1.0 / s.physics_hz;
+        AnimationConfig config{s.duration, physics_timestep, s.render_fps, "out/"};
+        ASSERT_EQ(config.steps_per_frame(), s.expected_steps_per_frame)
+            << "physics_hz=" << s.physics_hz << " render_fps=" << s.render_fps;
+
+        auto test_scene = create_test_scene_with_dynamic_box();
+        auto physics = std::make_unique<FakePhysicsSimulator>();
+        auto* physics_ptr = physics.get();
+
+        auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+
+        AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                                   std::move(physics), test_scene.camera, write_cb);
+
+        renderer.render();
+
+        int total_frames = config.total_frames();
+        int expected_total_steps = total_frames * s.expected_steps_per_frame;
+
+        // Physics stepped correct number of times
+        EXPECT_EQ(static_cast<int>(physics_ptr->step_calls.size()), expected_total_steps)
+            << "physics_hz=" << s.physics_hz << " render_fps=" << s.render_fps;
+
+        // Each step uses correct timestep
+        for (const auto& call : physics_ptr->step_calls) {
+            EXPECT_DOUBLE_EQ(call.dt, physics_timestep)
+                << "physics_hz=" << s.physics_hz;
+        }
+
+        // Total physics time matches animation duration within one timestep
+        double total_physics_time = static_cast<double>(physics_ptr->step_calls.size()) * physics_timestep;
+        EXPECT_NEAR(total_physics_time, s.duration, physics_timestep)
+            << "physics_hz=" << s.physics_hz << " render_fps=" << s.render_fps;
+    }
+}
+
+// ==========================================================
+// UNIT TEST: Physics-to-render ratio variations (07-03)
+// ==========================================================
+
+// Behavior: Steps per frame scales correctly with physics-to-render frequency ratio
+// Test Budget: 1 behavior x 2 = 2 max unit tests. Using 1 parametrized test.
+struct PhysicsRatioParam {
+    double physics_hz;
+    double render_fps;
+    double duration;
+    int expected_steps_per_frame;
+    int expected_total_steps;
+};
+
+class AnimationRendererPhysicsRatio
+    : public ::testing::TestWithParam<PhysicsRatioParam> {};
+
+TEST_P(AnimationRendererPhysicsRatio, StepsPhysicsAtCorrectRatioPerFrame) {
+    const auto& p = GetParam();
+    double physics_timestep = 1.0 / p.physics_hz;
+    AnimationConfig config{p.duration, physics_timestep, p.render_fps, "out/"};
+
+    auto test_scene = create_test_scene_with_dynamic_box();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+    auto* physics_ptr = physics.get();
+
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    EXPECT_EQ(config.steps_per_frame(), p.expected_steps_per_frame);
+    EXPECT_EQ(static_cast<int>(physics_ptr->step_calls.size()), p.expected_total_steps);
+
+    // Total physics time matches duration within one timestep
+    double total_physics_time = static_cast<double>(physics_ptr->step_calls.size()) * physics_timestep;
+    EXPECT_NEAR(total_physics_time, p.duration, physics_timestep);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    MultipleStepsPerFrame,
+    AnimationRendererPhysicsRatio,
+    ::testing::Values(
+        // 60Hz physics / 30fps render = 2 steps/frame, 1s duration = 30 frames * 2 = 60 steps
+        PhysicsRatioParam{60.0,  30.0, 1.0, 2, 60},
+        // 120Hz physics / 30fps render = 4 steps/frame, 1s duration = 30 frames * 4 = 120 steps
+        PhysicsRatioParam{120.0, 30.0, 1.0, 4, 120},
+        // 60Hz physics / 60fps render = 1 step/frame (1:1 ratio)
+        PhysicsRatioParam{60.0,  60.0, 0.5, 1, 30},
+        // 240Hz physics / 60fps render = 4 steps/frame
+        PhysicsRatioParam{240.0, 60.0, 0.5, 4, 120}
+    ));
+
 } // namespace
 } // namespace nwave
