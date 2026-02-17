@@ -50,7 +50,9 @@ std::vector<Color3> Renderer::render(const Camera& camera, const Scene& scene,
         return pixels;
     }
 
-    std::cout << "Using " << num_threads << " threads\n";
+    if (!quiet_) {
+        std::cout << "Using " << num_threads << " threads\n";
+    }
 
     std::vector<std::thread> threads;
     int rows_per_thread = height / num_threads;

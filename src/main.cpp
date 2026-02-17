@@ -18,6 +18,7 @@
 #include "infrastructure/jolt_physics_simulator.h"
 #include "infrastructure/cli_dispatcher.h"
 #include "infrastructure/validator.h"
+#include "infrastructure/progress_reporter.h"
 #include "core/math_utils.h"
 #include <yaml-cpp/yaml.h>
 #include <iostream>
@@ -274,6 +275,7 @@ static int run_physics_animate(const RenderCommand& cmd) {
                                     const Camera& cam,
                                     int /*width*/, int /*spp_hint*/) {
         Renderer renderer;
+        renderer.set_quiet(true);
         RenderSettings settings;
         settings.samples_per_pixel = spp;
         settings.max_depth = default_max_depth;
@@ -282,8 +284,10 @@ static int run_physics_animate(const RenderCommand& cmd) {
         write_ppm(filename, pixels, cam.image_width(), cam.image_height());
     };
 
+    StreamProgressReporter progress(std::cerr);
     AnimationRenderer anim_renderer(anim_config, result.scene, result.shape_physics,
-                                    std::move(physics), camera, std::move(write_cb));
+                                    std::move(physics), camera, std::move(write_cb),
+                                    &progress);
     int frames_rendered = anim_renderer.render();
 
     std::cout << "Rendered " << frames_rendered << " frames to " << anim_config.output_directory << "\n";

@@ -19,6 +19,8 @@ struct RenderSettings {
 
 class Renderer {
 public:
+    void set_quiet(bool quiet) { quiet_ = quiet; }
+
     std::vector<Color3> render(const Camera& camera, const Scene& scene,
                                const RenderSettings& settings) const;
 
@@ -30,6 +32,8 @@ private:
                           const Camera& camera, const Scene& scene,
                           const RenderSettings& settings,
                           std::vector<Color3>& pixels) const;
+
+    bool quiet_ = false;
 };
 
 } // namespace nwave
