@@ -215,6 +215,77 @@ TEST_F(CliDispatcherTest, UsageTextIncludesPhysicsAnimateFlag) {
     EXPECT_EQ(rc, 0);
 }
 
+// --- Acceptance test: --fps and --output-dir flags wired to render handler ---
+
+TEST_F(CliDispatcherTest, FpsAndOutputDirFlagsParsedAndDispatchedToRenderHandler) {
+    RenderCommand captured;
+    bool handler_called = false;
+
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand& cmd) {
+        captured = cmd;
+        handler_called = true;
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml",
+                                     "--physics-animate",
+                                     "--fps", "60",
+                                     "--output-dir", "/tmp/test",
+                                     "--width", "400"};
+    auto argv = make_argv(args);
+    int rc = dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(rc, 0);
+    ASSERT_TRUE(handler_called);
+    EXPECT_EQ(captured.scene_file, "scene.yaml");
+    EXPECT_TRUE(captured.physics_animate);
+    EXPECT_EQ(captured.fps, 60);
+    EXPECT_EQ(captured.output_dir, "/tmp/test");
+    EXPECT_EQ(captured.width, 400);
+}
+
+// --- Unit tests for --fps and --output-dir defaults ---
+
+TEST_F(CliDispatcherTest, RenderWithoutFpsFlagDefaultsToZero) {
+    RenderCommand captured;
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand& cmd) {
+        captured = cmd;
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml"};
+    auto argv = make_argv(args);
+    dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(captured.fps, 0);
+}
+
+TEST_F(CliDispatcherTest, RenderWithoutOutputDirFlagDefaultsToEmpty) {
+    RenderCommand captured;
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand& cmd) {
+        captured = cmd;
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml"};
+    auto argv = make_argv(args);
+    dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(captured.output_dir, "");
+}
+
+TEST_F(CliDispatcherTest, UsageTextIncludesFpsAndOutputDirFlags) {
+    int rc = dispatch({"nwave", "--help"});
+
+    std::string output = out.str();
+    EXPECT_NE(output.find("--fps"), std::string::npos);
+    EXPECT_NE(output.find("--output-dir"), std::string::npos);
+    EXPECT_EQ(rc, 0);
+}
+
 TEST_F(CliDispatcherTest, AnimateFlagPreservesLegacyBehavior) {
     bool legacy_called = false;
     auto dispatcher = make_dispatcher();

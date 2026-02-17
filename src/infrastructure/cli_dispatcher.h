@@ -13,6 +13,8 @@ struct RenderCommand {
     int spp = 0;         // 0 = use scene default
     std::string output = "output.ppm";
     bool physics_animate = false;
+    int fps = 0;                // 0 = use YAML/default
+    std::string output_dir;     // empty = use YAML/default
 };
 
 struct ValidateCommand {
