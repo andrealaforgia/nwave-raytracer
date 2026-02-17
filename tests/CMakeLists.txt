@@ -15,6 +15,8 @@ add_executable(nwave_tests
     domain/emissive_test.cpp
     domain/point_light_test.cpp
     domain/camera_test.cpp
+    domain/animation_config_test.cpp
+    domain/physics_properties_test.cpp
     application/renderer_test.cpp
     application/sampling_test.cpp
     infrastructure/ppm_writer_test.cpp
