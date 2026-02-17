@@ -81,6 +81,53 @@ std::map<std::string, std::shared_ptr<Material>> YamlSceneLoader::parse_material
     return materials;
 }
 
+namespace {
+
+BodyType parse_body_type(const std::string& type_str) {
+    if (type_str == "dynamic") return BodyType::DYNAMIC;
+    if (type_str == "kinematic") return BodyType::KINEMATIC;
+    return BodyType::STATIC;
+}
+
+PhysicsProperties parse_physics(const YAML::Node& physics_node) {
+    PhysicsProperties props;
+    if (!physics_node || !physics_node.IsMap()) {
+        return props;
+    }
+    if (physics_node["body_type"]) {
+        props.body_type = parse_body_type(physics_node["body_type"].as<std::string>());
+    }
+    if (physics_node["mass"]) {
+        props.mass = physics_node["mass"].as<double>();
+    }
+    if (physics_node["initial_velocity"]) {
+        props.initial_velocity = parse_vec3(physics_node["initial_velocity"]);
+    }
+    if (physics_node["friction"]) {
+        props.friction = physics_node["friction"].as<double>();
+    }
+    if (physics_node["restitution"]) {
+        props.restitution = physics_node["restitution"].as<double>();
+    }
+    return props;
+}
+
+std::optional<AnimationConfig> parse_animation_config(const YAML::Node& anim_node) {
+    if (!anim_node || !anim_node.IsMap()) {
+        return std::nullopt;
+    }
+    AnimationConfig config;
+    config.duration = anim_node["duration"].as<double>();
+    config.physics_timestep = anim_node["physics_timestep"].as<double>();
+    config.render_fps = anim_node["render_fps"].as<double>();
+    if (anim_node["output_directory"]) {
+        config.output_directory = anim_node["output_directory"].as<std::string>();
+    }
+    return config;
+}
+
+} // anonymous namespace (physics/animation parsing)
+
 SceneLoadResult YamlSceneLoader::load(const std::string& yaml_content) {
     auto materials = parse_materials(yaml_content);
 
@@ -91,6 +138,7 @@ SceneLoadResult YamlSceneLoader::load(const std::string& yaml_content) {
 
     YAML::Node root = YAML::Load(yaml_content);
     Scene scene;
+    std::vector<PhysicsProperties> shape_physics;
 
     // Parse objects
     const auto& objects_node = root["objects"];
@@ -159,6 +207,8 @@ SceneLoadResult YamlSceneLoader::load(const std::string& yaml_content) {
                     "Unknown object type: " + type +
                     ". Supported types: sphere, plane, box, cylinder, triangle, triangle_mesh");
             }
+
+            shape_physics.push_back(parse_physics(obj_node["physics"]));
         }
     }
 
@@ -195,7 +245,11 @@ SceneLoadResult YamlSceneLoader::load(const std::string& yaml_content) {
 
     Camera camera(lookfrom, lookat, vup, vfov, aspect_ratio, image_width);
 
-    return SceneLoadResult(std::move(scene), std::move(camera), std::move(materials_storage));
+    // Parse animation config (optional)
+    auto animation_config = parse_animation_config(root["animation"]);
+
+    return SceneLoadResult(std::move(scene), std::move(camera), std::move(materials_storage),
+                           std::move(shape_physics), std::move(animation_config));
 }
 
 } // namespace nwave

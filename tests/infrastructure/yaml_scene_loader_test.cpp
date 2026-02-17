@@ -13,6 +13,8 @@
 #include "domain/lights/directional_light.h"
 #include "domain/materials/emissive.h"
 #include "domain/camera.h"
+#include "domain/physics_properties.h"
+#include "domain/animation_config.h"
 
 using namespace nwave;
 
@@ -472,4 +474,127 @@ TEST_F(YamlSceneLoaderLightsAndEmissiveTest, ParsesSceneWithBothPointAndDirectio
     EXPECT_DOUBLE_EQ(dir_light->color().r(), 1.0);
     EXPECT_DOUBLE_EQ(dir_light->color().g(), 0.95);
     EXPECT_DOUBLE_EQ(dir_light->color().b(), 0.9);
+}
+
+// --- Physics and animation parsing tests (step 06-02) ---
+// Test Budget: 4 behaviors x 2 = 8 max unit tests. Using 4 tests.
+
+class YamlSceneLoaderPhysicsAndAnimationTest : public ::testing::Test {
+protected:
+    YamlSceneLoader loader;
+
+    static constexpr const char* minimal_scene_suffix = R"(
+lights:
+  - type: point
+    position: [0, 10, 0]
+    color: [1, 1, 1]
+    intensity: 1.0
+camera:
+  lookfrom: [0, 0, 5]
+  lookat: [0, 0, 0]
+  vup: [0, 1, 0]
+  vfov: 45
+  image_width: 640
+)";
+};
+
+TEST_F(YamlSceneLoaderPhysicsAndAnimationTest, ParsesPhysicsBlockWithAllProperties) {
+    const std::string yaml = std::string(R"(
+materials:
+  - name: ball
+    type: lambertian
+    albedo: [0.8, 0.2, 0.2]
+objects:
+  - type: sphere
+    center: [0, 5, 0]
+    radius: 0.5
+    material: ball
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      initial_velocity: [5, 0, 0]
+      friction: 0.6
+      restitution: 0.8
+)") + minimal_scene_suffix;
+
+    auto result = loader.load(yaml);
+
+    ASSERT_EQ(result.shape_physics.size(), 1u);
+    EXPECT_EQ(result.shape_physics[0].body_type, BodyType::DYNAMIC);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].mass, 2.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].initial_velocity.x(), 5.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].initial_velocity.y(), 0.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].initial_velocity.z(), 0.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].friction, 0.6);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].restitution, 0.8);
+}
+
+TEST_F(YamlSceneLoaderPhysicsAndAnimationTest, DefaultsToStaticBodyTypeWhenPhysicsBlockMissing) {
+    const std::string yaml = std::string(R"(
+materials:
+  - name: floor
+    type: lambertian
+    albedo: [0.5, 0.5, 0.5]
+objects:
+  - type: plane
+    point: [0, 0, 0]
+    normal: [0, 1, 0]
+    material: floor
+)") + minimal_scene_suffix;
+
+    auto result = loader.load(yaml);
+
+    ASSERT_EQ(result.shape_physics.size(), 1u);
+    EXPECT_EQ(result.shape_physics[0].body_type, BodyType::STATIC);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].mass, 1.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].initial_velocity.x(), 0.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].initial_velocity.y(), 0.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].initial_velocity.z(), 0.0);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].friction, 0.5);
+    EXPECT_DOUBLE_EQ(result.shape_physics[0].restitution, 0.3);
+}
+
+TEST_F(YamlSceneLoaderPhysicsAndAnimationTest, ParsesAnimationSectionWithAllFields) {
+    const std::string yaml = std::string(R"(
+materials:
+  - name: mat
+    type: lambertian
+    albedo: [0.5, 0.5, 0.5]
+objects:
+  - type: sphere
+    center: [0, 1, 0]
+    radius: 0.5
+    material: mat
+animation:
+  duration: 5.0
+  physics_timestep: 0.01667
+  render_fps: 30
+  output_directory: "frames/"
+)") + minimal_scene_suffix;
+
+    auto result = loader.load(yaml);
+
+    ASSERT_TRUE(result.animation_config.has_value());
+    EXPECT_DOUBLE_EQ(result.animation_config->duration, 5.0);
+    EXPECT_DOUBLE_EQ(result.animation_config->physics_timestep, 0.01667);
+    EXPECT_DOUBLE_EQ(result.animation_config->render_fps, 30.0);
+    EXPECT_EQ(result.animation_config->output_directory, "frames/");
+}
+
+TEST_F(YamlSceneLoaderPhysicsAndAnimationTest, AnimationConfigAbsentWhenNoAnimationSection) {
+    const std::string yaml = std::string(R"(
+materials:
+  - name: mat
+    type: lambertian
+    albedo: [0.5, 0.5, 0.5]
+objects:
+  - type: sphere
+    center: [0, 1, 0]
+    radius: 0.5
+    material: mat
+)") + minimal_scene_suffix;
+
+    auto result = loader.load(yaml);
+
+    EXPECT_FALSE(result.animation_config.has_value());
 }
