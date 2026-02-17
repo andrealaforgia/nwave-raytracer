@@ -27,121 +27,147 @@ int SceneValidator::levenshtein_distance(const std::string& a, const std::string
     return dp[m][n];
 }
 
+namespace {
+
+std::set<std::string> collect_material_names(const YAML::Node& materials_node) {
+    std::set<std::string> names;
+    if (materials_node && materials_node.IsSequence()) {
+        for (const auto& mat : materials_node) {
+            if (mat["name"]) {
+                names.insert(mat["name"].as<std::string>());
+            }
+        }
+    }
+    return names;
+}
+
+void validate_material_reference(const std::string& obj_name,
+                                 const std::string& mat_ref,
+                                 const std::set<std::string>& defined_materials,
+                                 ValidationResult& result) {
+    if (defined_materials.find(mat_ref) != defined_materials.end()) {
+        return;
+    }
+
+    static constexpr int max_suggestion_distance = 2;
+    std::string suggestion;
+    int best_distance = max_suggestion_distance + 1;
+    for (const auto& defined : defined_materials) {
+        int dist = SceneValidator::levenshtein_distance(mat_ref, defined);
+        if (dist <= max_suggestion_distance && dist < best_distance) {
+            best_distance = dist;
+            suggestion = defined;
+        }
+    }
+
+    std::ostringstream oss;
+    oss << "Object '" << obj_name << "' references unknown material '" << mat_ref << "'";
+    if (!suggestion.empty()) {
+        oss << " (did you mean '" << suggestion << "'?)";
+    }
+    result.add_error(oss.str());
+}
+
+void validate_physics_properties(const std::string& obj_name,
+                                 const std::string& obj_type,
+                                 const YAML::Node& physics,
+                                 ValidationResult& result) {
+    if (physics["mass"]) {
+        double mass = physics["mass"].as<double>();
+        if (mass < 0.0) {
+            std::ostringstream oss;
+            oss << "Object '" << obj_name << "' has negative mass: " << mass;
+            result.add_error(oss.str());
+        }
+    }
+    if (physics["friction"]) {
+        double friction = physics["friction"].as<double>();
+        if (friction < 0.0 || friction > 1.0) {
+            std::ostringstream oss;
+            oss << "Object '" << obj_name << "' has friction out of [0, 1]: " << friction;
+            result.add_error(oss.str());
+        }
+    }
+    if (physics["restitution"]) {
+        double restitution = physics["restitution"].as<double>();
+        if (restitution < 0.0 || restitution > 1.0) {
+            std::ostringstream oss;
+            oss << "Object '" << obj_name << "' has restitution out of [0, 1]: " << restitution;
+            result.add_error(oss.str());
+        }
+    }
+    std::string body_type_str = physics["body_type"]
+        ? physics["body_type"].as<std::string>() : "static";
+    if (obj_type == "triangle_mesh" && body_type_str == "dynamic") {
+        std::ostringstream oss;
+        oss << "Object '" << obj_name
+            << "': concave triangle_mesh must be static, not dynamic";
+        result.add_error(oss.str());
+    }
+}
+
+void validate_object(const YAML::Node& obj,
+                     const std::set<std::string>& defined_materials,
+                     ValidationResult& result) {
+    std::string obj_name = obj["name"] ? obj["name"].as<std::string>() : "unnamed";
+    std::string obj_type = obj["type"] ? obj["type"].as<std::string>() : "unknown";
+
+    if (obj["material"]) {
+        validate_material_reference(obj_name, obj["material"].as<std::string>(),
+                                    defined_materials, result);
+    }
+
+    if (obj["radius"]) {
+        double radius = obj["radius"].as<double>();
+        if (radius <= 0.0) {
+            std::ostringstream oss;
+            oss << "Object '" << obj_name << "' has non-positive radius: " << radius;
+            result.add_error(oss.str());
+        }
+    }
+
+    if (obj["physics"]) {
+        validate_physics_properties(obj_name, obj_type, obj["physics"], result);
+    }
+}
+
+bool is_node_present(const YAML::Node& node) {
+    return node && !node.IsNull();
+}
+
+bool is_non_empty_sequence(const YAML::Node& node) {
+    return node && node.IsSequence() && node.size() > 0;
+}
+
+} // anonymous namespace
+
 ValidationResult SceneValidator::validate(const std::string& yaml_content,
                                           bool physics_animate) {
     ValidationResult result;
     YAML::Node root = YAML::Load(yaml_content);
 
-    // Collect defined material names
-    std::set<std::string> defined_materials;
-    const auto& materials_node = root["materials"];
-    if (materials_node && materials_node.IsSequence()) {
-        for (const auto& mat : materials_node) {
-            if (mat["name"]) {
-                defined_materials.insert(mat["name"].as<std::string>());
-            }
-        }
-    }
+    auto defined_materials = collect_material_names(root["materials"]);
 
-    // Check camera
-    if (!root["camera"] || root["camera"].IsNull()) {
+    if (!is_node_present(root["camera"])) {
         result.add_error("Scene requires a camera");
     }
 
-    // Check objects
     const auto& objects_node = root["objects"];
-    if (!objects_node || !objects_node.IsSequence() || objects_node.size() == 0) {
+    if (!is_non_empty_sequence(objects_node)) {
         result.add_error("Scene requires at least 1 object");
     } else {
         for (const auto& obj : objects_node) {
-            std::string obj_name = obj["name"] ? obj["name"].as<std::string>() : "unnamed";
-            std::string obj_type = obj["type"] ? obj["type"].as<std::string>() : "unknown";
-
-            // Material reference check
-            if (obj["material"]) {
-                std::string mat_ref = obj["material"].as<std::string>();
-                if (defined_materials.find(mat_ref) == defined_materials.end()) {
-                    std::string suggestion;
-                    int best_distance = 3; // threshold: suggest only within distance 2
-                    for (const auto& defined : defined_materials) {
-                        int dist = levenshtein_distance(mat_ref, defined);
-                        if (dist <= 2 && dist < best_distance) {
-                            best_distance = dist;
-                            suggestion = defined;
-                        }
-                    }
-
-                    std::ostringstream oss;
-                    oss << "Object '" << obj_name << "' references unknown material '" << mat_ref << "'";
-                    if (!suggestion.empty()) {
-                        oss << " (did you mean '" << suggestion << "'?)";
-                    }
-                    result.add_error(oss.str());
-                }
-            }
-
-            // Parameter range checks
-            if (obj["radius"]) {
-                double radius = obj["radius"].as<double>();
-                if (radius <= 0.0) {
-                    std::ostringstream oss;
-                    oss << "Object '" << obj_name << "' has non-positive radius: " << radius;
-                    result.add_error(oss.str());
-                }
-            }
-
-            if (obj["physics"]) {
-                const auto& physics = obj["physics"];
-                if (physics["mass"]) {
-                    double mass = physics["mass"].as<double>();
-                    if (mass < 0.0) {
-                        std::ostringstream oss;
-                        oss << "Object '" << obj_name << "' has negative mass: " << mass;
-                        result.add_error(oss.str());
-                    }
-                }
-                if (physics["friction"]) {
-                    double friction = physics["friction"].as<double>();
-                    if (friction < 0.0 || friction > 1.0) {
-                        std::ostringstream oss;
-                        oss << "Object '" << obj_name << "' has friction out of [0, 1]: " << friction;
-                        result.add_error(oss.str());
-                    }
-                }
-                if (physics["restitution"]) {
-                    double restitution = physics["restitution"].as<double>();
-                    if (restitution < 0.0 || restitution > 1.0) {
-                        std::ostringstream oss;
-                        oss << "Object '" << obj_name << "' has restitution out of [0, 1]: " << restitution;
-                        result.add_error(oss.str());
-                    }
-                }
-                // Dynamic TriangleMesh is not supported (concave mesh must be static)
-                std::string body_type_str = physics["body_type"]
-                    ? physics["body_type"].as<std::string>() : "static";
-                if (obj_type == "triangle_mesh" && body_type_str == "dynamic") {
-                    std::ostringstream oss;
-                    oss << "Object '" << obj_name
-                        << "': concave triangle_mesh must be static, not dynamic";
-                    result.add_error(oss.str());
-                }
-            }
+            validate_object(obj, defined_materials, result);
         }
     }
 
-    // Check lights
-    const auto& lights_node = root["lights"];
-    if (!lights_node || !lights_node.IsSequence() || lights_node.size() == 0) {
+    if (!is_non_empty_sequence(root["lights"])) {
         result.add_error("Scene requires at least 1 light");
     }
 
-    // Check animation section when physics-animate mode is requested
-    if (physics_animate) {
-        const auto& animation_node = root["animation"];
-        if (!animation_node || animation_node.IsNull()) {
-            result.add_error(
-                "Missing 'animation' section required for physics-animate mode");
-        }
+    if (physics_animate && !is_node_present(root["animation"])) {
+        result.add_error(
+            "Missing 'animation' section required for physics-animate mode");
     }
 
     return result;

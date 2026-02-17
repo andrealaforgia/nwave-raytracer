@@ -23,15 +23,16 @@ PhysicsBodyDesc map_shape_to_body_desc(const Shape* shape, const PhysicsProperti
         desc.position = sphere->center();
     } else if (auto* box = dynamic_cast<const Box*>(shape)) {
         desc.shape_type = PhysicsShapeType::BOX;
-        auto bmin = box->box_min();
-        auto bmax = box->box_max();
-        double hx = (bmax.x() - bmin.x()) / 2.0;
-        double hy = (bmax.y() - bmin.y()) / 2.0;
-        double hz = (bmax.z() - bmin.z()) / 2.0;
-        desc.dimensions = Vec3(hx, hy, hz);
-        desc.position = Point3((bmin.x() + bmax.x()) / 2.0,
-                               (bmin.y() + bmax.y()) / 2.0,
-                               (bmin.z() + bmax.z()) / 2.0);
+        auto box_min = box->box_min();
+        auto box_max = box->box_max();
+        desc.dimensions = Vec3(
+            (box_max.x() - box_min.x()) / 2.0,
+            (box_max.y() - box_min.y()) / 2.0,
+            (box_max.z() - box_min.z()) / 2.0);
+        desc.position = Point3(
+            (box_min.x() + box_max.x()) / 2.0,
+            (box_min.y() + box_max.y()) / 2.0,
+            (box_min.z() + box_max.z()) / 2.0);
     } else if (auto* plane = dynamic_cast<const Plane*>(shape)) {
         desc.shape_type = PhysicsShapeType::PLANE;
         desc.position = plane->point();
@@ -55,6 +56,10 @@ std::string frame_filename(const std::string& output_dir, int frame_index) {
     std::ostringstream oss;
     oss << output_dir << "frame_" << std::setw(4) << std::setfill('0') << frame_index << ".ppm";
     return oss.str();
+}
+
+bool is_movable_body(BodyType body_type) {
+    return body_type == BodyType::DYNAMIC || body_type == BodyType::KINEMATIC;
 }
 
 } // namespace
@@ -92,7 +97,7 @@ int AnimationRenderer::render() {
         PhysicsBodyDesc desc = map_shape_to_body_desc(original_shapes[i].get(), props);
         body_ids[i] = physics_->add_body(desc);
 
-        if (props.body_type == BodyType::DYNAMIC || props.body_type == BodyType::KINEMATIC) {
+        if (is_movable_body(props.body_type)) {
             is_dynamic[i] = true;
             transformed_shapes[i] = std::make_shared<TransformedShape>(
                 original_shapes[i], Matrix4x4::identity());

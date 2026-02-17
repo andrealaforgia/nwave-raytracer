@@ -117,15 +117,17 @@ struct JoltPhysicsSimulator::Impl {
 
     std::vector<JPH::BodyID> body_ids;
 
-    Impl() {
-        temp_allocator = std::make_unique<JPH::TempAllocatorImpl>(10 * 1024 * 1024);
-        job_system = std::make_unique<JPH::JobSystemThreadPool>(
-            JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, 1);
+    static constexpr int temp_allocator_size = 10 * 1024 * 1024; // 10 MB
+    static constexpr int physics_thread_count = 1;
+    static constexpr uint max_bodies = 1024;
+    static constexpr uint num_body_mutexes = 0;
+    static constexpr uint max_body_pairs = 1024;
+    static constexpr uint max_contact_constraints = 1024;
 
-        const uint max_bodies = 1024;
-        const uint num_body_mutexes = 0;
-        const uint max_body_pairs = 1024;
-        const uint max_contact_constraints = 1024;
+    Impl() {
+        temp_allocator = std::make_unique<JPH::TempAllocatorImpl>(temp_allocator_size);
+        job_system = std::make_unique<JPH::JobSystemThreadPool>(
+            JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, physics_thread_count);
 
         physics_system.Init(max_bodies, num_body_mutexes, max_body_pairs,
                            max_contact_constraints, bp_layer_interface,
@@ -152,51 +154,52 @@ JoltPhysicsSimulator::~JoltPhysicsSimulator() {
     release_jolt();
 }
 
-int JoltPhysicsSimulator::add_body(const PhysicsBodyDesc& desc) {
-    JPH::BodyInterface& body_interface = impl_->physics_system.GetBodyInterface();
+namespace {
 
-    JPH::ShapeRefC shape;
+JPH::ShapeRefC create_collision_shape(const PhysicsBodyDesc& desc) {
     switch (desc.shape_type) {
-    case PhysicsShapeType::SPHERE: {
-        shape = new JPH::SphereShape(static_cast<float>(desc.dimensions.x()));
-        break;
-    }
-    case PhysicsShapeType::BOX: {
-        shape = new JPH::BoxShape(JPH::Vec3(
+    case PhysicsShapeType::SPHERE:
+        return new JPH::SphereShape(static_cast<float>(desc.dimensions.x()));
+    case PhysicsShapeType::BOX:
+        return new JPH::BoxShape(JPH::Vec3(
             static_cast<float>(desc.dimensions.x() * 0.5),
             static_cast<float>(desc.dimensions.y() * 0.5),
             static_cast<float>(desc.dimensions.z() * 0.5)));
-        break;
-    }
     case PhysicsShapeType::PLANE: {
+        static constexpr float plane_half_extent = 1000.0f;
         JPH::Plane plane(JPH::Vec3(0.0f, 1.0f, 0.0f), 0.0f);
-        shape = new JPH::PlaneShape(plane, nullptr, 1000.0f);
-        break;
+        return new JPH::PlaneShape(plane, nullptr, plane_half_extent);
     }
     case PhysicsShapeType::CYLINDER: {
         float half_height = static_cast<float>(desc.dimensions.y() * 0.5);
         float radius = static_cast<float>(desc.dimensions.x());
-        shape = new JPH::CylinderShape(half_height, radius);
-        break;
+        return new JPH::CylinderShape(half_height, radius);
     }
     }
+    return nullptr; // unreachable
+}
 
+struct MotionConfig {
     JPH::EMotionType motion_type;
     JPH::ObjectLayer layer;
-    switch (desc.properties.body_type) {
-    case BodyType::STATIC:
-        motion_type = JPH::EMotionType::Static;
-        layer = LAYER_STATIC;
-        break;
-    case BodyType::DYNAMIC:
-        motion_type = JPH::EMotionType::Dynamic;
-        layer = LAYER_DYNAMIC;
-        break;
-    case BodyType::KINEMATIC:
-        motion_type = JPH::EMotionType::Kinematic;
-        layer = LAYER_DYNAMIC;
-        break;
+};
+
+MotionConfig map_body_type_to_motion(BodyType body_type) {
+    switch (body_type) {
+    case BodyType::STATIC:    return {JPH::EMotionType::Static, LAYER_STATIC};
+    case BodyType::DYNAMIC:   return {JPH::EMotionType::Dynamic, LAYER_DYNAMIC};
+    case BodyType::KINEMATIC: return {JPH::EMotionType::Kinematic, LAYER_DYNAMIC};
     }
+    return {JPH::EMotionType::Static, LAYER_STATIC}; // unreachable
+}
+
+} // namespace
+
+int JoltPhysicsSimulator::add_body(const PhysicsBodyDesc& desc) {
+    JPH::BodyInterface& body_interface = impl_->physics_system.GetBodyInterface();
+
+    JPH::ShapeRefC shape = create_collision_shape(desc);
+    auto [motion_type, layer] = map_body_type_to_motion(desc.properties.body_type);
 
     JPH::RVec3 position(desc.position.x(), desc.position.y(), desc.position.z());
     JPH::Quat rotation(static_cast<float>(desc.rotation.x()),

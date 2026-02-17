@@ -203,6 +203,22 @@ static int run_legacy_animate() {
     return 0;
 }
 
+static constexpr double default_aspect_ratio = 16.0 / 9.0;
+static constexpr int default_max_depth = 10;
+static constexpr int default_render_spp = 16;
+static constexpr int animation_spp = 1;
+
+static bool read_scene_file(const std::string& path, std::string& content) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "Error: cannot open scene file: " << path << "\n";
+        return false;
+    }
+    content.assign(std::istreambuf_iterator<char>(file),
+                   std::istreambuf_iterator<char>());
+    return true;
+}
+
 static Camera build_camera_with_overrides(const std::string& yaml_content,
                                           const Camera& base_camera,
                                           int width_override) {
@@ -210,7 +226,6 @@ static Camera build_camera_with_overrides(const std::string& yaml_content,
         return base_camera;
     }
 
-    // Re-parse YAML to get camera parameters for reconstruction with new width
     YAML::Node root = YAML::Load(yaml_content);
     const auto& cam = root["camera"];
 
@@ -222,20 +237,17 @@ static Camera build_camera_with_overrides(const std::string& yaml_content,
     Point3 lookat = parse_vec3(cam["lookat"]);
     Vec3 vup = parse_vec3(cam["vup"]);
     double vfov = cam["vfov"].as<double>();
-    double aspect_ratio = cam["aspect_ratio"] ? cam["aspect_ratio"].as<double>() : 16.0 / 9.0;
+    double aspect_ratio = cam["aspect_ratio"]
+        ? cam["aspect_ratio"].as<double>() : default_aspect_ratio;
 
     return Camera(lookfrom, lookat, vup, vfov, aspect_ratio, width_override);
 }
 
 static int run_physics_animate(const RenderCommand& cmd) {
-    std::ifstream file(cmd.scene_file);
-    if (!file.is_open()) {
-        std::cerr << "Error: cannot open scene file: " << cmd.scene_file << "\n";
+    std::string yaml_content;
+    if (!read_scene_file(cmd.scene_file, yaml_content)) {
         return 1;
     }
-
-    std::string yaml_content((std::istreambuf_iterator<char>(file)),
-                              std::istreambuf_iterator<char>());
 
     YamlSceneLoader loader;
     auto result = loader.load(yaml_content);
@@ -246,32 +258,25 @@ static int run_physics_animate(const RenderCommand& cmd) {
     }
 
     const AnimationConfig& anim_config = result.animation_config.value();
-
     Camera camera = build_camera_with_overrides(yaml_content, result.camera, cmd.width);
 
-    // Create output directory
     std::filesystem::create_directories(anim_config.output_directory);
 
-    // Print physics summary
     int body_count = static_cast<int>(result.shape_physics.size());
     int total_steps = anim_config.total_frames() * anim_config.steps_per_frame();
     std::cout << "Physics: " << body_count << " bodies, " << total_steps << " total steps\n";
 
-    // Create physics simulator
     auto physics = std::make_unique<JoltPhysicsSimulator>();
+    int spp = (cmd.spp > 0) ? cmd.spp : animation_spp;
 
-    // Render settings
-    int spp = (cmd.spp > 0) ? cmd.spp : 1;
-
-    // Write callback: render scene to PPM
     WriteCallback write_cb = [spp](const std::string& filename,
                                     const Scene& scene,
                                     const Camera& cam,
-                                    int width, int /*spp_hint*/) {
+                                    int /*width*/, int /*spp_hint*/) {
         Renderer renderer;
         RenderSettings settings;
         settings.samples_per_pixel = spp;
-        settings.max_depth = 10;
+        settings.max_depth = default_max_depth;
 
         auto pixels = renderer.render(cam, scene, settings);
         write_ppm(filename, pixels, cam.image_width(), cam.image_height());
@@ -289,14 +294,10 @@ static int run_physics_animate(const RenderCommand& cmd) {
 }
 
 static int run_render(const RenderCommand& cmd) {
-    std::ifstream file(cmd.scene_file);
-    if (!file.is_open()) {
-        std::cerr << "Error: cannot open scene file: " << cmd.scene_file << "\n";
+    std::string yaml_content;
+    if (!read_scene_file(cmd.scene_file, yaml_content)) {
         return 1;
     }
-
-    std::string yaml_content((std::istreambuf_iterator<char>(file)),
-                              std::istreambuf_iterator<char>());
 
     YamlSceneLoader loader;
     auto result = loader.load(yaml_content);
@@ -304,8 +305,8 @@ static int run_render(const RenderCommand& cmd) {
     Camera camera = build_camera_with_overrides(yaml_content, result.camera, cmd.width);
 
     RenderSettings settings;
-    settings.samples_per_pixel = (cmd.spp > 0) ? cmd.spp : 16;
-    settings.max_depth = 10;
+    settings.samples_per_pixel = (cmd.spp > 0) ? cmd.spp : default_render_spp;
+    settings.max_depth = default_max_depth;
 
     std::cout << "Rendering scene from " << cmd.scene_file << " ("
               << camera.image_width() << "x" << camera.image_height()
@@ -321,14 +322,10 @@ static int run_render(const RenderCommand& cmd) {
 }
 
 static int run_validate(const ValidateCommand& cmd) {
-    std::ifstream file(cmd.scene_file);
-    if (!file.is_open()) {
-        std::cerr << "Error: cannot open scene file: " << cmd.scene_file << "\n";
+    std::string yaml_content;
+    if (!read_scene_file(cmd.scene_file, yaml_content)) {
         return 1;
     }
-
-    std::string yaml_content((std::istreambuf_iterator<char>(file)),
-                              std::istreambuf_iterator<char>());
 
     SceneValidator validator;
     auto result = validator.validate(yaml_content);

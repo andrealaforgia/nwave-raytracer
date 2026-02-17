@@ -28,15 +28,14 @@ void StreamProgressReporter::frame_complete(int frame_number) {
                           / static_cast<double>(frame_durations_.size());
     double eta = avg_duration * remaining;
 
-    // Progress bar: 20 chars wide
-    int bar_width = 20;
-    int filled = (frame_number * bar_width) / total_frames_;
-    int empty = bar_width - filled;
+    static constexpr int progress_bar_width = 20;
+    int filled = (frame_number * progress_bar_width) / total_frames_;
+    int empty = progress_bar_width - filled;
 
     output_ << "Frame " << frame_number << "/" << total_frames_
             << " (" << percentage << "%) [";
     for (int i = 0; i < filled; ++i) output_ << '=';
-    if (filled < bar_width) {
+    if (filled < progress_bar_width) {
         output_ << '>';
         for (int i = 1; i < empty; ++i) output_ << ' ';
     }
