@@ -3,6 +3,7 @@
 
 #include "core/vec3.h"
 #include "core/gpu_types.h"
+#include "infrastructure/gpu/scene_flattener.h"
 
 #include <memory>
 #include <vector>
@@ -29,6 +30,11 @@ public:
     /// Dispatches the ray_trace_kernel with the given GPUCamera and
     /// reads back the resulting sky gradient pixel data.
     std::vector<Color3> dispatch_ray_trace(const GPUCamera& camera);
+
+    /// Dispatches the ray_trace_kernel with camera and full scene data.
+    /// Uploads GPUShape[], GPUMaterial[], GPULight[] arrays to Metal buffers.
+    std::vector<Color3> dispatch_ray_trace(const GPUCamera& camera,
+                                           const FlatScene& scene);
 
 private:
     struct Impl;

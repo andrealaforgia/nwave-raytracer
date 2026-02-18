@@ -21,8 +21,12 @@ struct GPUCamera {
 };
 
 kernel void ray_trace_kernel(
-    constant GPUCamera& camera [[buffer(0)]],
-    device float4* output      [[buffer(1)]],
+    constant GPUCamera& camera     [[buffer(0)]],
+    device float4* output          [[buffer(1)]],
+    constant uchar* shapes         [[buffer(2)]],
+    constant uchar* materials      [[buffer(3)]],
+    constant uchar* lights         [[buffer(4)]],
+    constant uint* scene_counts    [[buffer(5)]],
     uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= camera.image_width || gid.y >= camera.image_height) return;

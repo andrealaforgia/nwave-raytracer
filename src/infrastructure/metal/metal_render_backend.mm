@@ -1,6 +1,7 @@
 #include "infrastructure/metal/metal_render_backend.h"
 #include "infrastructure/metal/metal_device.h"
 #include "infrastructure/metal/metal_buffer_manager.h"
+#include "infrastructure/gpu/scene_flattener.h"
 #include "core/gpu_types.h"
 
 #include <iostream>
@@ -84,13 +85,15 @@ bool MetalRenderBackend::initialise(const std::string& metallib_path) {
 }
 
 std::vector<Color3> MetalRenderBackend::render(const Camera& camera,
-                                               const Scene& /*scene*/,
+                                               const Scene& scene,
                                                const RenderSettings& settings) {
     if (!impl_ || !impl_->buffer_manager) {
         return {};
     }
+    SceneFlattener flattener;
+    FlatScene flat = flattener.flatten(scene);
     GPUCamera gpu_camera = pack_gpu_camera(camera, settings);
-    return impl_->buffer_manager->dispatch_ray_trace(gpu_camera);
+    return impl_->buffer_manager->dispatch_ray_trace(gpu_camera, flat);
 }
 
 std::vector<Color3> MetalRenderBackend::render_gradient(int width, int height) {

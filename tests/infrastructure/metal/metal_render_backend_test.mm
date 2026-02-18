@@ -5,6 +5,9 @@
 #include "application/renderer.h"
 #include "domain/camera.h"
 #include "domain/scene.h"
+#include "domain/shapes/sphere.h"
+#include "domain/materials/lambertian.h"
+#include "domain/lights/point_light.h"
 #include "core/gpu_types.h"
 #include "core/vec3.h"
 
@@ -275,6 +278,89 @@ TEST_F(MetalRenderBackendTest, HighResRenderPerformanceUnder50ms) {
 
     ASSERT_EQ(gpu_pixels.size(), static_cast<size_t>(3840 * 2160));
     EXPECT_LT(elapsed_ms, 50) << "GPU render at 3840x2160 took " << elapsed_ms << "ms (limit: 50ms)";
+}
+
+// ---------------------------------------------------------------------------
+// Step 04-04: Metal buffer upload of flattened scene data
+// ---------------------------------------------------------------------------
+
+// Helper: build a scene with the given number of spheres and lights
+static Scene build_scene_with_objects(int sphere_count, int light_count) {
+    Scene scene;
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    for (int i = 0; i < sphere_count; ++i) {
+        scene.add_shape(std::make_shared<Sphere>(
+            Point3(static_cast<double>(i) * 2.0, 0.0, 0.0), 0.5, &red_mat));
+    }
+    for (int i = 0; i < light_count; ++i) {
+        scene.add_light(std::make_shared<PointLight>(
+            Point3(0.0, 5.0, static_cast<double>(i) * 2.0),
+            Color3(1.0, 1.0, 1.0), 1.0));
+    }
+    return scene;
+}
+
+// Acceptance: Given a non-empty scene with 5 spheres and 3 lights
+// When rendered via MetalRenderBackend
+// Then the correct number of pixels is returned (scene data uploaded without error)
+TEST_F(MetalRenderBackendTest, RenderWithNonEmptySceneReturnsPixels) {
+    Camera camera(Point3(0, 0, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 400);
+    auto scene = build_scene_with_objects(5, 3);
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+    // Sky gradient still renders (shader doesn't use scene data yet)
+    EXPECT_FALSE(std::isnan(pixels[0].r()));
+    EXPECT_FALSE(std::isnan(pixels[0].g()));
+    EXPECT_FALSE(std::isnan(pixels[0].b()));
+}
+
+// Acceptance: Given a non-empty scene with objects
+// When rendered via GPU
+// Then the sky gradient is unaffected (shader ignores scene data in Phase 04)
+TEST_F(MetalRenderBackendTest, NonEmptySceneProducesSameSkyGradientAsEmpty) {
+    Camera camera(Point3(0, 0, -2), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 400);
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    Scene empty_scene;
+    auto empty_pixels = backend_->render(camera, empty_scene, settings);
+
+    auto populated_scene = build_scene_with_objects(5, 3);
+    auto scene_pixels = backend_->render(camera, populated_scene, settings);
+
+    ASSERT_EQ(empty_pixels.size(), scene_pixels.size());
+    int diff = max_channel_diff(empty_pixels, scene_pixels);
+    EXPECT_EQ(diff, 0) << "Scene data should not affect sky gradient yet";
+}
+
+// Acceptance: Given a 500-object scene
+// When scene data is uploaded and rendered via GPU
+// Then the render completes within 100ms (upload performance)
+TEST_F(MetalRenderBackendTest, LargeSceneUploadPerformanceUnder100ms) {
+    Camera camera(Point3(0, 0, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 400);
+    auto scene = build_scene_with_objects(500, 10);
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    // Warm-up
+    backend_->render(camera, scene, settings);
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto pixels = backend_->render(camera, scene, settings);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+    EXPECT_LT(elapsed_ms, 100) << "500-object scene upload+render took "
+                                << elapsed_ms << "ms (limit: 100ms)";
 }
 
 } // namespace
