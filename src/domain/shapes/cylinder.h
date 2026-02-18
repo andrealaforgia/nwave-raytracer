@@ -15,6 +15,7 @@ public:
     const Point3& center() const { return center_; }
     double radius() const { return radius_; }
     double height() const { return height_; }
+    const Material* material() const { return material_; }
 
 private:
     Point3 center_; // center of the base

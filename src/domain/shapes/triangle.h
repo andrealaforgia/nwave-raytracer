@@ -14,6 +14,7 @@ public:
     const Point3& v0() const { return v0_; }
     const Point3& v1() const { return v1_; }
     const Point3& v2() const { return v2_; }
+    const Material* material() const { return material_; }
 
 private:
     Point3 v0_;

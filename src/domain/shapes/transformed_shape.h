@@ -15,6 +15,10 @@ public:
 
     void set_transform(const Matrix4x4& transform);
 
+    const std::shared_ptr<Shape>& inner() const { return inner_; }
+    const Matrix4x4& transform() const { return transform_; }
+    const Matrix4x4& inverse_matrix() const { return inverse_; }
+
 private:
     std::shared_ptr<Shape> inner_;
     Matrix4x4 transform_;

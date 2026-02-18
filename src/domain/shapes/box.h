@@ -13,6 +13,7 @@ public:
 
     const Point3& box_min() const { return box_min_; }
     const Point3& box_max() const { return box_max_; }
+    const Material* material() const { return material_; }
 
 private:
     Point3 box_min_;

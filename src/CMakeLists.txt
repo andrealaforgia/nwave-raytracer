@@ -43,6 +43,7 @@ add_library(nwave_infrastructure
     infrastructure/validator.cpp
     infrastructure/jolt_physics_simulator.cpp
     infrastructure/progress_reporter.cpp
+    infrastructure/gpu/scene_flattener.cpp
 )
 target_include_directories(nwave_infrastructure PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(nwave_infrastructure PUBLIC nwave_application yaml-cpp::yaml-cpp Jolt)
