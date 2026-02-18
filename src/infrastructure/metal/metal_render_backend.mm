@@ -39,6 +39,12 @@ bool MetalRenderBackend::initialise(const std::string& metallib_path) {
     return true;
 }
 
+std::vector<Color3> MetalRenderBackend::render(const Camera& camera,
+                                               const Scene& /*scene*/,
+                                               const RenderSettings& /*settings*/) {
+    return render_gradient(camera.image_width(), camera.image_height());
+}
+
 std::vector<Color3> MetalRenderBackend::render_gradient(int width, int height) {
     if (!impl_ || !impl_->buffer_manager) {
         return {};
