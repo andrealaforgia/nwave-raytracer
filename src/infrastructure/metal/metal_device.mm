@@ -2,13 +2,17 @@
 
 #import <Metal/Metal.h>
 
+#include <unordered_map>
+
 namespace nwave {
 
 struct MetalDevice::Impl {
     id<MTLDevice> device;
     id<MTLCommandQueue> command_queue;
+    id<MTLLibrary> library;
+    std::unordered_map<std::string, id<MTLComputePipelineState>> pipelines;
 
-    Impl() : device(nil), command_queue(nil) {
+    Impl() : device(nil), command_queue(nil), library(nil) {
         device = MTLCreateSystemDefaultDevice();
         if (device) {
             command_queue = [device newCommandQueue];
@@ -30,6 +34,45 @@ std::string MetalDevice::device_name() const {
         return "";
     }
     return std::string([impl_->device.name UTF8String]);
+}
+
+bool MetalDevice::load_library(const std::string& path) {
+    if (!impl_->device) {
+        return false;
+    }
+
+    NSString* ns_path = [NSString stringWithUTF8String:path.c_str()];
+    NSURL* url = [NSURL fileURLWithPath:ns_path];
+    NSError* error = nil;
+    impl_->library = [impl_->device newLibraryWithURL:url error:&error];
+
+    if (error || !impl_->library) {
+        return false;
+    }
+    return true;
+}
+
+bool MetalDevice::create_pipeline(const std::string& function_name) {
+    if (!impl_->device || !impl_->library) {
+        return false;
+    }
+
+    NSString* ns_name = [NSString stringWithUTF8String:function_name.c_str()];
+    id<MTLFunction> function = [impl_->library newFunctionWithName:ns_name];
+    if (!function) {
+        return false;
+    }
+
+    NSError* error = nil;
+    id<MTLComputePipelineState> pipeline =
+        [impl_->device newComputePipelineStateWithFunction:function error:&error];
+
+    if (error || !pipeline) {
+        return false;
+    }
+
+    impl_->pipelines[function_name] = pipeline;
+    return true;
 }
 
 } // namespace nwave

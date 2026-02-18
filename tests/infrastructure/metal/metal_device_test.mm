@@ -2,6 +2,7 @@
 #include "infrastructure/metal/metal_device.h"
 
 #import <Metal/Metal.h>
+#import <Foundation/Foundation.h>
 
 namespace nwave {
 namespace {
@@ -38,6 +39,30 @@ TEST(MetalDeviceTest, DeviceNameMatchesSystemMetalDevice) {
 
     std::string expected_name = [system_device.name UTF8String];
     EXPECT_EQ(device.device_name(), expected_name);
+}
+
+// Acceptance: Given MetalDevice loads the metallib
+// When the gradient kernel function is requested
+// Then a valid compute pipeline state is created
+TEST(MetalDeviceTest, LoadsMetallibAndCreatesGradientPipeline) {
+    MetalDevice device;
+    ASSERT_TRUE(device.is_available());
+
+    // metallib is placed next to the test binary by CMake
+    std::string metallib_path = "nwave_shaders.metallib";
+
+    // Skip if metallib was not compiled (requires Xcode with metal compiler)
+    NSFileManager* fm = [NSFileManager defaultManager];
+    NSString* ns_path = [NSString stringWithUTF8String:metallib_path.c_str()];
+    if (![fm fileExistsAtPath:ns_path]) {
+        GTEST_SKIP() << "nwave_shaders.metallib not found (metal compiler requires Xcode)";
+    }
+
+    bool loaded = device.load_library(metallib_path);
+    ASSERT_TRUE(loaded) << "Failed to load metallib from: " << metallib_path;
+
+    bool pipeline_created = device.create_pipeline("gradient_kernel");
+    EXPECT_TRUE(pipeline_created) << "Failed to create pipeline for gradient_kernel";
 }
 
 } // namespace

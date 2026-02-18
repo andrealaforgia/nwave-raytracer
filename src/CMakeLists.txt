@@ -50,6 +50,63 @@ if(NWAVE_HAS_METAL)
     target_sources(nwave_infrastructure PRIVATE
         infrastructure/metal/metal_device.mm
     )
+
+    # --- Metal shader compilation: .metal -> .air -> .metallib ---
+    # Detect Metal shader compiler (requires full Xcode, not just Command Line Tools)
+    execute_process(
+        COMMAND xcrun --find metal
+        OUTPUT_VARIABLE METAL_COMPILER
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE METAL_COMPILER_FOUND
+    )
+
+    if(METAL_COMPILER_FOUND EQUAL 0)
+        message(STATUS "Metal shader compiler found: ${METAL_COMPILER}")
+        set(NWAVE_HAS_METAL_COMPILER ON)
+    else()
+        message(WARNING "Metal shader compiler not found (requires Xcode). Shader compilation disabled.")
+        set(NWAVE_HAS_METAL_COMPILER OFF)
+    endif()
+
+    if(NWAVE_HAS_METAL_COMPILER)
+        set(METAL_SHADER_SOURCE
+            ${CMAKE_CURRENT_SOURCE_DIR}/infrastructure/metal/shaders/gradient.metal)
+        set(METAL_AIR_OUTPUT
+            ${CMAKE_CURRENT_BINARY_DIR}/gradient.air)
+        set(METAL_LIB_OUTPUT
+            ${CMAKE_CURRENT_BINARY_DIR}/nwave_shaders.metallib)
+
+        add_custom_command(
+            OUTPUT ${METAL_AIR_OUTPUT}
+            COMMAND xcrun -sdk macosx metal -c ${METAL_SHADER_SOURCE} -o ${METAL_AIR_OUTPUT}
+            DEPENDS ${METAL_SHADER_SOURCE}
+            COMMENT "Compiling gradient.metal -> gradient.air"
+        )
+
+        add_custom_command(
+            OUTPUT ${METAL_LIB_OUTPUT}
+            COMMAND xcrun -sdk macosx metallib ${METAL_AIR_OUTPUT} -o ${METAL_LIB_OUTPUT}
+            DEPENDS ${METAL_AIR_OUTPUT}
+            COMMENT "Linking gradient.air -> nwave_shaders.metallib"
+        )
+
+        add_custom_target(nwave_shaders ALL DEPENDS ${METAL_LIB_OUTPUT})
+
+        # Copy metallib next to all binary targets that need it
+        add_custom_command(TARGET nwave_shaders POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${METAL_LIB_OUTPUT}
+                ${CMAKE_BINARY_DIR}/tests/nwave_shaders.metallib
+            COMMENT "Copying metallib to test binary directory"
+        )
+        add_custom_command(TARGET nwave_shaders POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${METAL_LIB_OUTPUT}
+                ${CMAKE_BINARY_DIR}/nwave_shaders.metallib
+            COMMENT "Copying metallib to main binary directory"
+        )
+    endif()
 endif()
 
 add_executable(nwave main.cpp)

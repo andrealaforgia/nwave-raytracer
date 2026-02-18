@@ -19,6 +19,13 @@ public:
     bool is_available() const;
     std::string device_name() const;
 
+    /// Loads a compiled Metal shader library (.metallib) from the given path.
+    bool load_library(const std::string& path);
+
+    /// Creates a compute pipeline state for the named kernel function.
+    /// Requires a library to have been loaded first via load_library().
+    bool create_pipeline(const std::string& function_name);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
