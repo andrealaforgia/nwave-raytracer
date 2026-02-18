@@ -16,6 +16,7 @@
 #include "domain/materials/dielectric.h"
 #include "domain/materials/emissive.h"
 #include "domain/lights/point_light.h"
+#include "domain/lights/directional_light.h"
 #include "core/gpu_types.h"
 #include "core/matrix4x4.h"
 #include "core/vec3.h"
@@ -894,6 +895,234 @@ TEST_F(MetalRenderBackendTest, TwoMirrorSpheresAtHighDepthCompleteWithoutHang) {
     EXPECT_FALSE(std::isnan(center.r()));
     EXPECT_FALSE(std::isnan(center.g()));
     EXPECT_FALSE(std::isnan(center.b()));
+}
+
+// ---------------------------------------------------------------------------
+// Step 06-02: Multi-light accumulation and CPU-GPU visual equivalence
+// ---------------------------------------------------------------------------
+
+// Helper: count the percentage of pixels where all 3 channels are within
+// the given tolerance (in 0-255 scale).
+static double percent_pixels_within_tolerance(const std::vector<Color3>& a,
+                                               const std::vector<Color3>& b,
+                                               int tolerance) {
+    if (a.empty() || a.size() != b.size()) return 0.0;
+    int within = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        int dr = std::abs(static_cast<int>(std::round(a[i].r() * 255.0))
+                        - static_cast<int>(std::round(b[i].r() * 255.0)));
+        int dg = std::abs(static_cast<int>(std::round(a[i].g() * 255.0))
+                        - static_cast<int>(std::round(b[i].g() * 255.0)));
+        int db = std::abs(static_cast<int>(std::round(a[i].b() * 255.0))
+                        - static_cast<int>(std::round(b[i].b() * 255.0)));
+        if (dr <= tolerance && dg <= tolerance && db <= tolerance) {
+            ++within;
+        }
+    }
+    return 100.0 * static_cast<double>(within) / static_cast<double>(a.size());
+}
+
+// Acceptance Criterion 1: Given a scene with 2 point lights
+// When rendered via GPU
+// Then both lights produce illumination and shadows
+TEST_F(MetalRenderBackendTest, TwoPointLightsProduceIlluminationAndShadows) {
+    Camera camera(Point3(0, 2, -6), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+
+    Lambertian white_mat(Color3(0.8, 0.8, 0.8));
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    Scene scene;
+    // A sphere on a ground plane
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, &white_mat));
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+
+    // Two point lights at different positions -- left and right
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(-4, 4, -2), Color3(1, 1, 1), 1.0));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(4, 4, -2), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Render the same scene with only light 1 (left)
+    Scene scene_left;
+    scene_left.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, &white_mat));
+    scene_left.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+    scene_left.add_light(std::make_shared<PointLight>(
+        Point3(-4, 4, -2), Color3(1, 1, 1), 1.0));
+
+    auto pixels_left = backend_->render(camera, scene_left, settings);
+
+    // Render with only light 2 (right)
+    Scene scene_right;
+    scene_right.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, &white_mat));
+    scene_right.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+    scene_right.add_light(std::make_shared<PointLight>(
+        Point3(4, 4, -2), Color3(1, 1, 1), 1.0));
+
+    auto pixels_right = backend_->render(camera, scene_right, settings);
+
+    // The two-light render should be brighter than each single-light render
+    // on the top of the sphere (visible to both lights).
+    // Sphere top-center projects to approximately cx=200, cy=80 (above center)
+    int sx = 200, sy = 90;
+    int idx = sy * 400 + sx;
+    double brightness_both = pixels[idx].r() + pixels[idx].g() + pixels[idx].b();
+    double brightness_left = pixels_left[idx].r() + pixels_left[idx].g() + pixels_left[idx].b();
+    double brightness_right = pixels_right[idx].r() + pixels_right[idx].g() + pixels_right[idx].b();
+
+    EXPECT_GT(brightness_both, brightness_left)
+        << "Two-light scene should be brighter than left-light-only at sphere top";
+    EXPECT_GT(brightness_both, brightness_right)
+        << "Two-light scene should be brighter than right-light-only at sphere top";
+
+    // Shadow verification: on the ground, to the right of the sphere, the left
+    // light is occluded by the sphere (shadow), but the right light illuminates.
+    // In the single-left-light render, that region should be darker (shadow).
+    // Ground plane right of sphere, roughly x=280, y=160 (below center)
+    int ground_x = 280, ground_y = 160;
+    int ground_idx = ground_y * 400 + ground_x;
+    double ground_right_both = pixels[ground_idx].r() + pixels[ground_idx].g() + pixels[ground_idx].b();
+    double ground_right_left_only = pixels_left[ground_idx].r() + pixels_left[ground_idx].g() + pixels_left[ground_idx].b();
+
+    // With two lights, the right-side ground should be brighter than with just
+    // the left light (which casts shadow there)
+    EXPECT_GT(ground_right_both, ground_right_left_only + 0.01)
+        << "Two-light scene should fill in shadow from left light on right side ground";
+}
+
+// Acceptance Criterion 2: Given a scene with Lambertian, Metal, Dielectric,
+// Emissive spheres at 16 SPP When rendered via GPU and CPU
+// Then images are visually comparable
+TEST_F(MetalRenderBackendTest, AllFourMaterialTypesGpuMatchesCpuAt16Spp) {
+    Camera camera(Point3(0, 1, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 200);
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Metal chrome_mat(Color3(0.9, 0.9, 0.9), 0.1);
+    Dielectric glass_mat(1.5);
+    Emissive glow_mat(Color3(1.0, 0.8, 0.2), 2.0);
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    Scene scene;
+    // Four spheres in a row, each with a different material
+    scene.add_shape(std::make_shared<Sphere>(Point3(-3, 0, 0), 0.8, &red_mat));     // Lambertian
+    scene.add_shape(std::make_shared<Sphere>(Point3(-1, 0, 0), 0.8, &chrome_mat));  // Metal
+    scene.add_shape(std::make_shared<Sphere>(Point3(1, 0, 0), 0.8, &glass_mat));    // Dielectric
+    scene.add_shape(std::make_shared<Sphere>(Point3(3, 0, 0), 0.8, &glow_mat));     // Emissive
+    // Ground plane
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -0.8, 0), Vec3(0, 1, 0), &gray_mat));
+    // One point light
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(0, 5, -3), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 16;
+    settings.max_depth = 10;
+
+    // GPU render
+    auto gpu_pixels = backend_->render(camera, scene, settings);
+
+    // CPU render
+    Renderer cpu;
+    cpu.set_quiet(true);
+    auto cpu_pixels = cpu.render(camera, scene, settings);
+
+    ASSERT_EQ(gpu_pixels.size(), cpu_pixels.size());
+
+    // Verify all 4 material sphere regions produce non-trivial output
+    // (i.e., not all black, not all sky)
+    int width = 200;
+    // Lambertian sphere center: roughly x=35, y=52
+    // Metal sphere center: roughly x=75, y=52
+    // Dielectric sphere center: roughly x=125, y=52
+    // Emissive sphere center: roughly x=165, y=52
+    // (At 200px wide, 60-degree FOV, camera at z=-5 looking at origin)
+    // Approximate: sphere at x=-3 projects to x ~= 35
+    struct SphereCheck { int px; int py; const char* name; };
+    SphereCheck checks[] = {
+        {35, 52, "Lambertian"},
+        {75, 52, "Metal"},
+        {125, 52, "Dielectric"},
+        {165, 52, "Emissive"},
+    };
+
+    int height = static_cast<int>(gpu_pixels.size()) / width;
+    for (const auto& check : checks) {
+        if (check.px >= 0 && check.px < width && check.py >= 0 && check.py < height) {
+            int idx = check.py * width + check.px;
+            double gpu_brightness = gpu_pixels[idx].r() + gpu_pixels[idx].g() + gpu_pixels[idx].b();
+            double cpu_brightness = cpu_pixels[idx].r() + cpu_pixels[idx].g() + cpu_pixels[idx].b();
+            // Both GPU and CPU should produce non-trivial output for each material
+            EXPECT_GT(gpu_brightness, 0.01)
+                << check.name << " sphere on GPU should be visible";
+            EXPECT_GT(cpu_brightness, 0.01)
+                << check.name << " sphere on CPU should be visible";
+        }
+    }
+
+    // Per-pixel comparison: 90% of pixels should be within +/-10 per channel (0-255)
+    double pct = percent_pixels_within_tolerance(gpu_pixels, cpu_pixels, 10);
+    EXPECT_GE(pct, 90.0)
+        << "Expected >= 90% of pixels within +/-10 per channel, got " << pct << "%";
+}
+
+// Acceptance Criterion 3: Given GPU renders with all 4 material types
+// When compared to CPU at same SPP
+// Then per-pixel RGB differences are within +/-10 for 90% of pixels
+// (This test uses a more complex scene with 2 lights to stress multi-light)
+TEST_F(MetalRenderBackendTest, PerPixelGpuCpuDifferenceWithin10For90Percent) {
+    Camera camera(Point3(0, 2, -6), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 200);
+
+    Lambertian blue_mat(Color3(0.2, 0.3, 0.8));
+    Metal fuzzy_metal(Color3(0.7, 0.6, 0.5), 0.3);
+    Dielectric glass_mat(1.5);
+    Emissive warm_glow(Color3(1.0, 0.6, 0.1), 1.5);
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(-2, 0, 0), 0.8, &blue_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.8, &fuzzy_metal));
+    scene.add_shape(std::make_shared<Sphere>(Point3(2, 0, 0), 0.8, &glass_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 2), 0.5, &warm_glow));
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -0.8, 0), Vec3(0, 1, 0), &gray_mat));
+
+    // Two lights for multi-light accumulation
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(-3, 5, -3), Color3(1, 1, 1), 0.8));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(3, 4, -2), Color3(1, 1, 1), 0.6));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 16;
+    settings.max_depth = 10;
+
+    auto gpu_pixels = backend_->render(camera, scene, settings);
+
+    Renderer cpu;
+    cpu.set_quiet(true);
+    auto cpu_pixels = cpu.render(camera, scene, settings);
+
+    ASSERT_EQ(gpu_pixels.size(), cpu_pixels.size());
+
+    // Per-pixel comparison: 90% within +/-10 per channel (0-255)
+    double pct = percent_pixels_within_tolerance(gpu_pixels, cpu_pixels, 10);
+    EXPECT_GE(pct, 90.0)
+        << "Expected >= 90% of pixels within +/-10 per channel (0-255), got " << pct << "%";
+
+    // Also report the max diff for diagnostic purposes
+    int worst = max_channel_diff(gpu_pixels, cpu_pixels);
+    // Max diff may be higher for stochastic materials, but should not be extreme
+    EXPECT_LT(worst, 200)
+        << "Worst per-channel diff was " << worst << " (0-255 scale), "
+        << "extreme outliers suggest a shader bug";
 }
 
 } // namespace
