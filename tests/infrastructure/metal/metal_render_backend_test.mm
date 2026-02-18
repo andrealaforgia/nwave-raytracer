@@ -6,6 +6,7 @@
 #include "domain/camera.h"
 #include "domain/scene.h"
 #include "domain/shapes/sphere.h"
+#include "domain/shapes/plane.h"
 #include "domain/materials/lambertian.h"
 #include "domain/lights/point_light.h"
 #include "core/gpu_types.h"
@@ -302,7 +303,7 @@ static Scene build_scene_with_objects(int sphere_count, int light_count) {
 
 // Acceptance: Given a non-empty scene with 5 spheres and 3 lights
 // When rendered via MetalRenderBackend
-// Then the correct number of pixels is returned (scene data uploaded without error)
+// Then the correct number of pixels is returned with valid data
 TEST_F(MetalRenderBackendTest, RenderWithNonEmptySceneReturnsPixels) {
     Camera camera(Point3(0, 0, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
                   90.0, 16.0 / 9.0, 400);
@@ -313,30 +314,9 @@ TEST_F(MetalRenderBackendTest, RenderWithNonEmptySceneReturnsPixels) {
     auto pixels = backend_->render(camera, scene, settings);
 
     ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
-    // Sky gradient still renders (shader doesn't use scene data yet)
     EXPECT_FALSE(std::isnan(pixels[0].r()));
     EXPECT_FALSE(std::isnan(pixels[0].g()));
     EXPECT_FALSE(std::isnan(pixels[0].b()));
-}
-
-// Acceptance: Given a non-empty scene with objects
-// When rendered via GPU
-// Then the sky gradient is unaffected (shader ignores scene data in Phase 04)
-TEST_F(MetalRenderBackendTest, NonEmptySceneProducesSameSkyGradientAsEmpty) {
-    Camera camera(Point3(0, 0, -2), Point3(0, 0, 0), Vec3(0, 1, 0),
-                  90.0, 16.0 / 9.0, 400);
-    RenderSettings settings;
-    settings.samples_per_pixel = 1;
-
-    Scene empty_scene;
-    auto empty_pixels = backend_->render(camera, empty_scene, settings);
-
-    auto populated_scene = build_scene_with_objects(5, 3);
-    auto scene_pixels = backend_->render(camera, populated_scene, settings);
-
-    ASSERT_EQ(empty_pixels.size(), scene_pixels.size());
-    int diff = max_channel_diff(empty_pixels, scene_pixels);
-    EXPECT_EQ(diff, 0) << "Scene data should not affect sky gradient yet";
 }
 
 // Acceptance: Given a 500-object scene
@@ -361,6 +341,148 @@ TEST_F(MetalRenderBackendTest, LargeSceneUploadPerformanceUnder100ms) {
     ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
     EXPECT_LT(elapsed_ms, 100) << "500-object scene upload+render took "
                                 << elapsed_ms << "ms (limit: 100ms)";
+}
+
+// ---------------------------------------------------------------------------
+// Step 05-01: GPU intersection for Sphere, Plane, Box with Lambertian shading
+// ---------------------------------------------------------------------------
+
+// Acceptance: Given an empty scene (no shapes, no lights)
+// When rendered via GPU after intersection code is added
+// Then sky gradient still renders correctly (regression check)
+TEST_F(MetalRenderBackendTest, EmptySceneSkyGradientStillWorksAfterIntersection) {
+    Camera camera(Point3(0, 0, -2), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 400);
+    Scene empty_scene;
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto gpu_pixels = backend_->render(camera, empty_scene, settings);
+    auto cpu_pixels = cpu_sky_gradient(camera, settings);
+
+    ASSERT_EQ(gpu_pixels.size(), cpu_pixels.size());
+    int diff = max_channel_diff(gpu_pixels, cpu_pixels);
+    EXPECT_LE(diff, 1) << "Sky gradient regression: max per-channel diff was " << diff;
+}
+
+// Acceptance: Given a red sphere on a gray ground plane with one point light
+// When rendered via GPU at 1 SPP
+// Then the sphere center pixel is non-sky-colored (sphere is visible with diffuse shading)
+TEST_F(MetalRenderBackendTest, SingleSphereIsVisibleOnGpu) {
+    // Camera looking at origin, sphere at origin
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat));
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -0.5, 0), Vec3(0, 1, 0), &gray_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Center pixel should be reddish (sphere hit), not sky blue/white
+    int cx = 200, cy = 112;
+    Color3 center = pixels[cy * 400 + cx];
+    // Sky gradient at center would be approximately (0.85, 0.91, 1.0) after gamma
+    // Sphere with red Lambertian should have R > G and R > B
+    EXPECT_GT(center.r(), 0.1) << "Sphere center should have non-trivial red component";
+    EXPECT_GT(center.r(), center.b()) << "Red sphere should have R > B";
+}
+
+// Acceptance: Given a scene with 1 sphere and 0 lights
+// When rendered via GPU
+// Then the sphere is visible at ambient level only (dark but non-zero)
+TEST_F(MetalRenderBackendTest, AmbientOnlyWithoutLights) {
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian white_mat(Color3(1.0, 1.0, 1.0));
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &white_mat));
+    // No lights
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Center pixel: sphere hit with ambient only = 0.05 * albedo(1,1,1) = (0.05, 0.05, 0.05)
+    // After gamma: sqrt(0.05) ~= 0.224
+    int cx = 200, cy = 112;
+    Color3 center = pixels[cy * 400 + cx];
+    // Should be dim but non-zero (ambient)
+    EXPECT_GT(center.r(), 0.1) << "Ambient should produce non-zero brightness";
+    EXPECT_LT(center.r(), 0.4) << "Ambient-only should be dim";
+    // Should be approximately equal across channels (white material)
+    EXPECT_NEAR(center.r(), center.g(), 0.05);
+    EXPECT_NEAR(center.r(), center.b(), 0.05);
+}
+
+// Acceptance: Given a scene with a small sphere between light and large sphere
+// When rendered via GPU
+// Then the large sphere shows a shadow region (shadowed pixel darker than lit pixel)
+TEST_F(MetalRenderBackendTest, ShadowVisibleBetweenSpheres) {
+    // Camera looking along -Z
+    Camera camera(Point3(0, 0, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian white_mat(Color3(0.8, 0.8, 0.8));
+
+    Scene scene;
+    // Large sphere (background) centered at origin
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 2), 2.0, &white_mat));
+    // Small sphere (shadow caster) between camera and large sphere
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, -1), 0.3, &white_mat));
+    // Light above and to the right -- shadow from small sphere falls on large sphere
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(0, 0, -3), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Sample a pixel on the large sphere behind the small sphere (shadow region)
+    // and a pixel on the large sphere away from shadow
+    // Center of image hits the small sphere; look at a pixel slightly off-center
+    // that hits the large sphere in the shadow of the small sphere
+    int cx = 200, cy = 112;
+    Color3 center_pixel = pixels[cy * 400 + cx];
+
+    // Pixel far from center on the large sphere -- not in shadow
+    // The large sphere is big, so offset significantly
+    int lit_x = 280, lit_y = 112;
+    Color3 lit_pixel = pixels[lit_y * 400 + lit_x];
+
+    // The center pixel should be the small sphere which is occluded from light
+    // by the large sphere behind it. Actually, the small sphere is between
+    // camera and light, so the small sphere faces the light and is lit.
+    // The shadow falls on the large sphere behind the small sphere.
+    // Let's sample a pixel that hits the large sphere right behind the small sphere.
+    // The small sphere subtends about 0.3/4 * 400 ~= 30 pixels at center.
+    // Just outside the small sphere silhouette, we hit the large sphere in shadow.
+    int shadow_x = 200, shadow_y = 95;  // slightly above center, on large sphere, in shadow
+    Color3 shadow_pixel = pixels[shadow_y * 400 + shadow_x];
+
+    // The lit pixel on the large sphere should be brighter than the shadowed pixel
+    // (which gets only ambient)
+    double lit_brightness = lit_pixel.r() + lit_pixel.g() + lit_pixel.b();
+    double shadow_brightness = shadow_pixel.r() + shadow_pixel.g() + shadow_pixel.b();
+
+    // If the shadow pixel hits sky instead of the large sphere, this test
+    // would fail differently. Both should be sphere-colored (non-sky).
+    // At minimum, the lit pixel should be visibly brighter than ambient level.
+    EXPECT_GT(lit_brightness, shadow_brightness)
+        << "Lit region (" << lit_brightness << ") should be brighter than shadow region ("
+        << shadow_brightness << ")";
 }
 
 } // namespace
