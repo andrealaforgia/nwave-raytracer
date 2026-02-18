@@ -63,6 +63,8 @@ struct GPULight {
 constant uint SHAPE_SPHERE   = 0;
 constant uint SHAPE_PLANE    = 1;
 constant uint SHAPE_BOX      = 2;
+constant uint SHAPE_CYLINDER = 3;
+constant uint SHAPE_TRIANGLE = 4;
 
 // Light type tags
 constant uint LIGHT_POINT       = 0;
@@ -193,6 +195,117 @@ bool intersect_box(Ray ray, constant float* params, float t_min, float t_max,
     return true;
 }
 
+// Cylinder intersection: Y-axis aligned with caps
+// params[0-2]=center, params[3]=radius, params[4-6]=axis(unused, Y-aligned), params[7]=half_height
+bool intersect_cylinder(Ray ray, constant float* params, float t_min, float t_max,
+                        thread float& t_hit, thread float3& normal) {
+    float3 center = float3(params[0], params[1], params[2]);
+    float radius = params[3];
+    float half_height = params[7];
+    float y_min = center.y;
+    float y_max = center.y + 2.0f * half_height;
+
+    bool hit_anything = false;
+    float closest = t_max;
+
+    // Body intersection: quadratic in XZ plane
+    float ox = ray.origin.x - center.x;
+    float oz = ray.origin.z - center.z;
+    float dx = ray.direction.x;
+    float dz = ray.direction.z;
+
+    float a = dx * dx + dz * dz;
+    if (a > 1e-8f) {
+        float b = 2.0f * (ox * dx + oz * dz);
+        float c = ox * ox + oz * oz - radius * radius;
+        float discriminant = b * b - 4.0f * a * c;
+
+        if (discriminant >= 0.0f) {
+            float sqrt_d = sqrt(discriminant);
+            float inv_2a = 1.0f / (2.0f * a);
+
+            for (int i = 0; i < 2; ++i) {
+                float t = (-b + (i == 0 ? -sqrt_d : sqrt_d)) * inv_2a;
+                if (t >= t_min && t < closest) {
+                    float y = ray.origin.y + t * ray.direction.y;
+                    if (y >= y_min && y <= y_max) {
+                        closest = t;
+                        hit_anything = true;
+                        float3 hp = ray.origin + t * ray.direction;
+                        normal = float3(hp.x - center.x, 0.0f, hp.z - center.z) / radius;
+                    }
+                }
+            }
+        }
+    }
+
+    // Cap intersection: bottom (y_min) and top (y_max)
+    float dy = ray.direction.y;
+    if (abs(dy) > 1e-8f) {
+        for (int cap = 0; cap < 2; ++cap) {
+            float cap_y = (cap == 0) ? y_min : y_max;
+            float t = (cap_y - ray.origin.y) / dy;
+            if (t >= t_min && t < closest) {
+                float3 hp = ray.origin + t * ray.direction;
+                float cx = hp.x - center.x;
+                float cz = hp.z - center.z;
+                if (cx * cx + cz * cz <= radius * radius) {
+                    closest = t;
+                    hit_anything = true;
+                    normal = (cap_y > center.y + half_height)
+                           ? float3(0.0f, 1.0f, 0.0f)
+                           : float3(0.0f, -1.0f, 0.0f);
+                }
+            }
+        }
+    }
+
+    if (hit_anything) {
+        t_hit = closest;
+        // Flip normal to face the ray
+        if (dot(normal, ray.direction) > 0.0f) {
+            normal = -normal;
+        }
+    }
+    return hit_anything;
+}
+
+// Triangle intersection: Möller-Trumbore algorithm
+// params[0-2]=v0, params[4-6]=v1, params[8-10]=v2
+bool intersect_triangle(Ray ray, constant float* params, float t_min, float t_max,
+                        thread float& t_hit, thread float3& normal) {
+    float3 v0 = float3(params[0], params[1], params[2]);
+    float3 v1 = float3(params[4], params[5], params[6]);
+    float3 v2 = float3(params[8], params[9], params[10]);
+
+    float3 edge1 = v1 - v0;
+    float3 edge2 = v2 - v0;
+    float3 h = cross(ray.direction, edge2);
+    float a = dot(edge1, h);
+
+    if (abs(a) < 1e-8f) return false;
+
+    float f = 1.0f / a;
+    float3 s = ray.origin - v0;
+    float u = f * dot(s, h);
+    if (u < 0.0f || u > 1.0f) return false;
+
+    float3 q = cross(s, edge1);
+    float v = f * dot(ray.direction, q);
+    if (v < 0.0f || u + v > 1.0f) return false;
+
+    float t = f * dot(edge2, q);
+    if (t < t_min || t > t_max) return false;
+
+    t_hit = t;
+    normal = normalize(cross(edge1, edge2));
+    // Flip normal to face the ray
+    if (dot(normal, ray.direction) > 0.0f) {
+        normal = -normal;
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Transform support: transform ray by inverse matrix
 // ---------------------------------------------------------------------------
@@ -245,6 +358,10 @@ bool intersect_scene(Ray ray,
             did_hit = intersect_plane(test_ray, params, t_min_val, closest, t_hit, normal);
         } else if (shape.shape_type == SHAPE_BOX) {
             did_hit = intersect_box(test_ray, params, t_min_val, closest, t_hit, normal);
+        } else if (shape.shape_type == SHAPE_CYLINDER) {
+            did_hit = intersect_cylinder(test_ray, params, t_min_val, closest, t_hit, normal);
+        } else if (shape.shape_type == SHAPE_TRIANGLE) {
+            did_hit = intersect_triangle(test_ray, params, t_min_val, closest, t_hit, normal);
         }
 
         if (did_hit) {

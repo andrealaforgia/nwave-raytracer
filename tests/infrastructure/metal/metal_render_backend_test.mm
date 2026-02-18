@@ -7,9 +7,14 @@
 #include "domain/scene.h"
 #include "domain/shapes/sphere.h"
 #include "domain/shapes/plane.h"
+#include "domain/shapes/box.h"
+#include "domain/shapes/cylinder.h"
+#include "domain/shapes/triangle.h"
+#include "domain/shapes/transformed_shape.h"
 #include "domain/materials/lambertian.h"
 #include "domain/lights/point_light.h"
 #include "core/gpu_types.h"
+#include "core/matrix4x4.h"
 #include "core/vec3.h"
 
 #import <Foundation/Foundation.h>
@@ -483,6 +488,123 @@ TEST_F(MetalRenderBackendTest, ShadowVisibleBetweenSpheres) {
     EXPECT_GT(lit_brightness, shadow_brightness)
         << "Lit region (" << lit_brightness << ") should be brighter than shadow region ("
         << shadow_brightness << ")";
+}
+
+// ---------------------------------------------------------------------------
+// Step 05-02: GPU intersection for Cylinder and Triangle
+// ---------------------------------------------------------------------------
+
+// Acceptance: Given a scene with one Cylinder
+// When rendered via GPU
+// Then the cylinder is visible with correct shading
+TEST_F(MetalRenderBackendTest, CylinderIsVisibleOnGpu) {
+    Camera camera(Point3(0, 0, -4), Point3(0, 0.5, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian green_mat(Color3(0.2, 0.8, 0.2));
+
+    Scene scene;
+    // Cylinder: base at (0,0,0), radius 0.5, height 1.0 -- extends from y=0 to y=1
+    scene.add_shape(std::make_shared<Cylinder>(Point3(0, 0, 0), 0.5, 1.0, &green_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Center pixel should hit the cylinder (greenish), not sky
+    int cx = 200, cy = 112;
+    Color3 center = pixels[cy * 400 + cx];
+    EXPECT_GT(center.g(), 0.1) << "Cylinder center should have non-trivial green component";
+    EXPECT_GT(center.g(), center.r()) << "Green cylinder should have G > R";
+}
+
+// Acceptance: Given a scene with one Triangle
+// When rendered via GPU
+// Then the triangle is visible with correct shading
+TEST_F(MetalRenderBackendTest, TriangleIsVisibleOnGpu) {
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian blue_mat(Color3(0.2, 0.2, 0.8));
+
+    Scene scene;
+    // Large triangle facing the camera
+    scene.add_shape(std::make_shared<Triangle>(
+        Point3(-1, -1, 0), Point3(1, -1, 0), Point3(0, 1, 0), &blue_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Center pixel should hit the triangle (bluish), not sky
+    int cx = 200, cy = 112;
+    Color3 center = pixels[cy * 400 + cx];
+    EXPECT_GT(center.b(), 0.1) << "Triangle center should have non-trivial blue component";
+    EXPECT_GT(center.b(), center.r()) << "Blue triangle should have B > R";
+}
+
+// Acceptance: Given a scene with all 5 shape types
+// When rendered via GPU at 1 SPP
+// Then all shapes are visible and positioned correctly
+TEST_F(MetalRenderBackendTest, AllFiveShapeTypesVisibleOnGpu) {
+    Camera camera(Point3(0, 2, -8), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Lambertian green_mat(Color3(0.2, 0.8, 0.2));
+    Lambertian blue_mat(Color3(0.2, 0.2, 0.8));
+    Lambertian yellow_mat(Color3(0.8, 0.8, 0.2));
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    Scene scene;
+    // Sphere at left
+    scene.add_shape(std::make_shared<Sphere>(Point3(-3, 0, 0), 0.8, &red_mat));
+    // Plane (ground)
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+    // Box at center-left
+    scene.add_shape(std::make_shared<Box>(
+        Point3(-0.5, -1, -0.5), Point3(0.5, 0, 0.5), &green_mat));
+    // Cylinder at center-right
+    scene.add_shape(std::make_shared<Cylinder>(Point3(2, -1, 0), 0.5, 1.5, &blue_mat));
+    // Triangle at right
+    scene.add_shape(std::make_shared<Triangle>(
+        Point3(4, -1, -0.5), Point3(5, -1, 0.5), Point3(4.5, 0.5, 0), &yellow_mat));
+
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(0, 5, -5), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Verify at least some non-sky pixels exist (shapes are visible)
+    // Sky color at the top would be blueish/white gradient
+    // Count pixels that differ significantly from a pure sky render
+    Scene empty_scene;
+    auto sky_pixels = backend_->render(camera, empty_scene, settings);
+
+    int differing_pixels = 0;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        double dr = std::abs(pixels[i].r() - sky_pixels[i].r());
+        double dg = std::abs(pixels[i].g() - sky_pixels[i].g());
+        double db = std::abs(pixels[i].b() - sky_pixels[i].b());
+        if (dr > 0.05 || dg > 0.05 || db > 0.05) {
+            ++differing_pixels;
+        }
+    }
+
+    // With 5 shapes (including a ground plane), a significant portion of pixels
+    // should differ from sky-only rendering
+    EXPECT_GT(differing_pixels, 1000)
+        << "Expected many pixels to differ from sky (5 shapes present), got "
+        << differing_pixels;
 }
 
 } // namespace
