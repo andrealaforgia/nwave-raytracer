@@ -193,14 +193,15 @@ TEST_F(SceneFlattenerTest, TransformedShapeHasInverseMatrix) {
     EXPECT_FLOAT_EQ(gpu_shape.params[5], 1.0f);
     EXPECT_FLOAT_EQ(gpu_shape.params[6], 1.0f);
 
-    // Verify inverse transform: inverse of translation(3,5,7) is translation(-3,-5,-7)
+    // Verify inverse transform stored in column-major order (matching Metal float4x4)
+    // Inverse of translation(3,5,7) is translation(-3,-5,-7)
     Matrix4x4 expected_inverse = Matrix4x4::translation(-3.0, -5.0, -7.0);
     for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c) {
-            EXPECT_NEAR(gpu_shape.inverse_transform[r * 4 + c],
+            EXPECT_NEAR(gpu_shape.inverse_transform[c * 4 + r],
                        static_cast<float>(expected_inverse.m[r][c]),
                        1e-5f)
-                << "Mismatch at inverse_transform[" << r << "][" << c << "]";
+                << "Mismatch at inverse_transform row=" << r << " col=" << c;
         }
     }
 }

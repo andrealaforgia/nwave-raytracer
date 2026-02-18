@@ -6,22 +6,22 @@ using namespace metal;
 // ---------------------------------------------------------------------------
 
 struct GPUCamera {
-    float3 lookfrom;        //  0
-    float  _pad0;           // 12
-    float3 pixel00_loc;     // 16
-    float  _pad1;           // 28
-    float3 pixel_delta_u;   // 32
-    float  _pad2;           // 44
-    float3 pixel_delta_v;   // 48
-    float  _pad3;           // 60
-    float3 background_top;  // 64
-    float  _pad4;           // 76
-    float3 background_bottom; // 80
-    float  _pad5;           // 92
-    uint   image_width;     // 96
-    uint   image_height;    //100
-    uint   samples_per_pixel; //104
-    uint   max_depth;       //108
+    packed_float3 lookfrom;        //  0
+    float  _pad0;                  // 12
+    packed_float3 pixel00_loc;     // 16
+    float  _pad1;                  // 28
+    packed_float3 pixel_delta_u;   // 32
+    float  _pad2;                  // 44
+    packed_float3 pixel_delta_v;   // 48
+    float  _pad3;                  // 60
+    packed_float3 background_top;  // 64
+    float  _pad4;                  // 76
+    packed_float3 background_bottom; // 80
+    float  _pad5;                  // 92
+    uint   image_width;            // 96
+    uint   image_height;           //100
+    uint   samples_per_pixel;      //104
+    uint   max_depth;              //108
 };
 
 // GPUShape: 128 bytes
@@ -40,9 +40,9 @@ struct GPUMaterial {
     float  _pad0;           //  4
     float  _pad1;           //  8
     float  _pad2;           // 12
-    float3 albedo;          // 16
+    packed_float3 albedo;   // 16
     float  param1;          // 28
-    float3 tint;            // 32
+    packed_float3 tint;     // 32
     float  _pad3;           // 44
 };                          // 48 total
 
@@ -52,9 +52,9 @@ struct GPULight {
     float  _pad0;           //  4
     float  _pad1;           //  8
     float  _pad2;           // 12
-    float3 position;        // 16
+    packed_float3 position; // 16
     float  intensity;       // 28
-    float3 color;           // 32
+    packed_float3 color;    // 32
     float  _pad3;           // 44
     float4 _reserved;       // 48
 };                          // 64 total
@@ -383,10 +383,10 @@ float3 transform_normal(float3 normal, float4x4 inv_transform) {
 // Linear BVH node struct -- must match C++ LinearBVHNode layout (32 bytes)
 // ---------------------------------------------------------------------------
 struct LinearBVHNode {
-    float3 aabb_min;     //  0: bounding box minimum
-    uint   offset;       // 12: second child (interior) or first prim (leaf)
-    float3 aabb_max;     // 16: bounding box maximum
-    uint   count;        // 28: 0 for interior, >0 for leaf (prim count)
+    packed_float3 aabb_min;  //  0: bounding box minimum
+    uint   offset;           // 12: second child (interior) or first prim (leaf)
+    packed_float3 aabb_max;  // 16: bounding box maximum
+    uint   count;            // 28: 0 for interior, >0 for leaf (prim count)
 };
 
 // ---------------------------------------------------------------------------

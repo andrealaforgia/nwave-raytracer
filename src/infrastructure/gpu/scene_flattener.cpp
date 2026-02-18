@@ -176,9 +176,10 @@ FlatScene SceneFlattener::flatten(const Scene& scene) const {
         if (transformed) {
             gpu_shape.has_transform = 1;
             const Matrix4x4& inv = transformed->inverse_matrix();
+            // Store in column-major order to match Metal's float4x4 layout
             for (int r = 0; r < 4; ++r) {
                 for (int c = 0; c < 4; ++c) {
-                    gpu_shape.inverse_transform[r * 4 + c] = static_cast<float>(inv.m[r][c]);
+                    gpu_shape.inverse_transform[c * 4 + r] = static_cast<float>(inv.m[r][c]);
                 }
             }
         }
