@@ -70,6 +70,12 @@ constant uint SHAPE_TRIANGLE = 4;
 constant uint LIGHT_POINT       = 0;
 constant uint LIGHT_DIRECTIONAL = 1;
 
+// Material type tags
+constant uint MAT_LAMBERTIAN = 0;
+constant uint MAT_METAL      = 1;
+constant uint MAT_DIELECTRIC = 2;
+constant uint MAT_EMISSIVE   = 3;
+
 // ---------------------------------------------------------------------------
 // Ray struct
 // ---------------------------------------------------------------------------
@@ -78,13 +84,70 @@ struct Ray {
     float3 direction;
 };
 
-// Hit record
+// Hit record -- includes front_face for dielectric refraction
 struct HitRecord {
     float  t;
     float3 point;
-    float3 normal;
+    float3 normal;       // always faces against the ray
+    bool   front_face;   // true if ray is outside the surface
     uint   material_index;
 };
+
+// ---------------------------------------------------------------------------
+// PCG random number generation
+// ---------------------------------------------------------------------------
+uint pcg_hash(uint input) {
+    uint state = input * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float random_float(thread uint& seed) {
+    seed = pcg_hash(seed);
+    return float(seed) / float(0xFFFFFFFFu);
+}
+
+float3 random_in_unit_sphere(thread uint& seed) {
+    // Rejection sampling for a point inside unit sphere
+    for (int i = 0; i < 32; ++i) {
+        float x = 2.0f * random_float(seed) - 1.0f;
+        float y = 2.0f * random_float(seed) - 1.0f;
+        float z = 2.0f * random_float(seed) - 1.0f;
+        float3 p = float3(x, y, z);
+        if (dot(p, p) < 1.0f) {
+            return p;
+        }
+    }
+    // Fallback: return a normalized random direction
+    float3 p = float3(2.0f * random_float(seed) - 1.0f,
+                       2.0f * random_float(seed) - 1.0f,
+                       2.0f * random_float(seed) - 1.0f);
+    return normalize(p) * 0.5f;
+}
+
+// ---------------------------------------------------------------------------
+// Reflection and refraction helpers
+// ---------------------------------------------------------------------------
+
+float3 reflect_vec(float3 v, float3 n) {
+    return v - 2.0f * dot(v, n) * n;
+}
+
+float3 refract_vec(float3 uv, float3 n, float etai_over_etat) {
+    float cos_theta = min(dot(-uv, n), 1.0f);
+    float3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+    float k = 1.0f - dot(r_out_perp, r_out_perp);
+    // Guard against negative sqrt due to floating point
+    float r_out_parallel_len = sqrt(max(k, 0.0f));
+    float3 r_out_parallel = -r_out_parallel_len * n;
+    return r_out_perp + r_out_parallel;
+}
+
+float schlick_reflectance(float cosine, float ref_idx) {
+    float r0 = (1.0f - ref_idx) / (1.0f + ref_idx);
+    r0 = r0 * r0;
+    return r0 + (1.0f - r0) * pow(1.0f - cosine, 5.0f);
+}
 
 // ---------------------------------------------------------------------------
 // Ray-shape intersection functions
@@ -95,8 +158,9 @@ constant float T_MAX = 1e20f;
 
 // Sphere intersection: quadratic formula
 // params[0-2]=center, params[3]=radius
+// Returns outward normal (always pointing away from center)
 bool intersect_sphere(Ray ray, constant float* params, float t_min, float t_max,
-                      thread float& t_hit, thread float3& normal) {
+                      thread float& t_hit, thread float3& outward_normal) {
     float3 center = float3(params[0], params[1], params[2]);
     float radius = params[3];
 
@@ -119,14 +183,15 @@ bool intersect_sphere(Ray ray, constant float* params, float t_min, float t_max,
 
     t_hit = root;
     float3 hit_point = ray.origin + root * ray.direction;
-    normal = (hit_point - center) / radius;
+    outward_normal = (hit_point - center) / radius;
     return true;
 }
 
 // Plane intersection: dot product
 // params[0-2]=point, params[4-6]=normal
+// Returns the geometric plane normal (not flipped)
 bool intersect_plane(Ray ray, constant float* params, float t_min, float t_max,
-                     thread float& t_hit, thread float3& normal) {
+                     thread float& t_hit, thread float3& outward_normal) {
     float3 plane_point = float3(params[0], params[1], params[2]);
     float3 plane_normal = float3(params[4], params[5], params[6]);
 
@@ -137,15 +202,15 @@ bool intersect_plane(Ray ray, constant float* params, float t_min, float t_max,
     if (t < t_min || t > t_max) return false;
 
     t_hit = t;
-    // Normal always faces toward the ray
-    normal = (denom < 0.0f) ? plane_normal : -plane_normal;
+    // Return the geometric normal (outward). The caller will handle front_face.
+    outward_normal = plane_normal;
     return true;
 }
 
 // Box intersection: slab method (AABB)
 // params[0-2]=bmin, params[4-6]=bmax
 bool intersect_box(Ray ray, constant float* params, float t_min, float t_max,
-                   thread float& t_hit, thread float3& normal) {
+                   thread float& t_hit, thread float3& outward_normal) {
     float3 bmin = float3(params[0], params[1], params[2]);
     float3 bmax = float3(params[4], params[5], params[6]);
 
@@ -180,16 +245,11 @@ bool intersect_box(Ray ray, constant float* params, float t_min, float t_max,
     // Find the dominant axis
     float3 abs_d = abs(d);
     if (abs_d.x > abs_d.y && abs_d.x > abs_d.z) {
-        normal = float3(sign(d.x), 0.0f, 0.0f);
+        outward_normal = float3(sign(d.x), 0.0f, 0.0f);
     } else if (abs_d.y > abs_d.z) {
-        normal = float3(0.0f, sign(d.y), 0.0f);
+        outward_normal = float3(0.0f, sign(d.y), 0.0f);
     } else {
-        normal = float3(0.0f, 0.0f, sign(d.z));
-    }
-
-    // Flip normal to face the ray
-    if (dot(normal, ray.direction) > 0.0f) {
-        normal = -normal;
+        outward_normal = float3(0.0f, 0.0f, sign(d.z));
     }
 
     return true;
@@ -198,7 +258,7 @@ bool intersect_box(Ray ray, constant float* params, float t_min, float t_max,
 // Cylinder intersection: Y-axis aligned with caps
 // params[0-2]=center, params[3]=radius, params[4-6]=axis(unused, Y-aligned), params[7]=half_height
 bool intersect_cylinder(Ray ray, constant float* params, float t_min, float t_max,
-                        thread float& t_hit, thread float3& normal) {
+                        thread float& t_hit, thread float3& outward_normal) {
     float3 center = float3(params[0], params[1], params[2]);
     float radius = params[3];
     float half_height = params[7];
@@ -232,7 +292,7 @@ bool intersect_cylinder(Ray ray, constant float* params, float t_min, float t_ma
                         closest = t;
                         hit_anything = true;
                         float3 hp = ray.origin + t * ray.direction;
-                        normal = float3(hp.x - center.x, 0.0f, hp.z - center.z) / radius;
+                        outward_normal = float3(hp.x - center.x, 0.0f, hp.z - center.z) / radius;
                     }
                 }
             }
@@ -252,7 +312,7 @@ bool intersect_cylinder(Ray ray, constant float* params, float t_min, float t_ma
                 if (cx * cx + cz * cz <= radius * radius) {
                     closest = t;
                     hit_anything = true;
-                    normal = (cap_y > center.y + half_height)
+                    outward_normal = (cap_y > center.y + half_height)
                            ? float3(0.0f, 1.0f, 0.0f)
                            : float3(0.0f, -1.0f, 0.0f);
                 }
@@ -262,18 +322,14 @@ bool intersect_cylinder(Ray ray, constant float* params, float t_min, float t_ma
 
     if (hit_anything) {
         t_hit = closest;
-        // Flip normal to face the ray
-        if (dot(normal, ray.direction) > 0.0f) {
-            normal = -normal;
-        }
     }
     return hit_anything;
 }
 
-// Triangle intersection: Möller-Trumbore algorithm
+// Triangle intersection: Moller-Trumbore algorithm
 // params[0-2]=v0, params[4-6]=v1, params[8-10]=v2
 bool intersect_triangle(Ray ray, constant float* params, float t_min, float t_max,
-                        thread float& t_hit, thread float3& normal) {
+                        thread float& t_hit, thread float3& outward_normal) {
     float3 v0 = float3(params[0], params[1], params[2]);
     float3 v1 = float3(params[4], params[5], params[6]);
     float3 v2 = float3(params[8], params[9], params[10]);
@@ -298,11 +354,7 @@ bool intersect_triangle(Ray ray, constant float* params, float t_min, float t_ma
     if (t < t_min || t > t_max) return false;
 
     t_hit = t;
-    normal = normalize(cross(edge1, edge2));
-    // Flip normal to face the ray
-    if (dot(normal, ray.direction) > 0.0f) {
-        normal = -normal;
-    }
+    outward_normal = normalize(cross(edge1, edge2));
     return true;
 }
 
@@ -329,6 +381,7 @@ float3 transform_normal(float3 normal, float4x4 inv_transform) {
 
 // ---------------------------------------------------------------------------
 // Scene intersection: brute-force over all shapes, find closest
+// Now returns outward_normal and computes front_face for dielectric support
 // ---------------------------------------------------------------------------
 bool intersect_scene(Ray ray,
                      constant uchar* shapes,
@@ -344,7 +397,7 @@ bool intersect_scene(Ray ray,
         constant float* params = shape.params;
 
         float t_hit = 0.0f;
-        float3 normal = float3(0.0f);
+        float3 outward_normal = float3(0.0f);
         bool did_hit = false;
 
         Ray test_ray = ray;
@@ -353,15 +406,15 @@ bool intersect_scene(Ray ray,
         }
 
         if (shape.shape_type == SHAPE_SPHERE) {
-            did_hit = intersect_sphere(test_ray, params, t_min_val, closest, t_hit, normal);
+            did_hit = intersect_sphere(test_ray, params, t_min_val, closest, t_hit, outward_normal);
         } else if (shape.shape_type == SHAPE_PLANE) {
-            did_hit = intersect_plane(test_ray, params, t_min_val, closest, t_hit, normal);
+            did_hit = intersect_plane(test_ray, params, t_min_val, closest, t_hit, outward_normal);
         } else if (shape.shape_type == SHAPE_BOX) {
-            did_hit = intersect_box(test_ray, params, t_min_val, closest, t_hit, normal);
+            did_hit = intersect_box(test_ray, params, t_min_val, closest, t_hit, outward_normal);
         } else if (shape.shape_type == SHAPE_CYLINDER) {
-            did_hit = intersect_cylinder(test_ray, params, t_min_val, closest, t_hit, normal);
+            did_hit = intersect_cylinder(test_ray, params, t_min_val, closest, t_hit, outward_normal);
         } else if (shape.shape_type == SHAPE_TRIANGLE) {
-            did_hit = intersect_triangle(test_ray, params, t_min_val, closest, t_hit, normal);
+            did_hit = intersect_triangle(test_ray, params, t_min_val, closest, t_hit, outward_normal);
         }
 
         if (did_hit) {
@@ -369,13 +422,16 @@ bool intersect_scene(Ray ray,
             closest = t_hit;
 
             if (shape.has_transform) {
-                // Compute hit point in world space using original ray
                 rec.point = ray.origin + t_hit * ray.direction;
-                rec.normal = transform_normal(normal, shape.inverse_transform);
+                outward_normal = transform_normal(outward_normal, shape.inverse_transform);
             } else {
                 rec.point = ray.origin + t_hit * ray.direction;
-                rec.normal = normal;
             }
+
+            // Determine front_face and set normal to always face against the ray
+            bool ff = dot(ray.direction, outward_normal) < 0.0f;
+            rec.front_face = ff;
+            rec.normal = ff ? outward_normal : -outward_normal;
 
             rec.t = t_hit;
             rec.material_index = shape.material_index;
@@ -386,28 +442,16 @@ bool intersect_scene(Ray ray,
 }
 
 // ---------------------------------------------------------------------------
-// Lambertian shading with direct lighting and shadow rays
+// Direct lighting computation (shadow rays)
 // ---------------------------------------------------------------------------
-float3 shade(HitRecord rec,
-             Ray ray,
-             constant uchar* materials,
-             uint material_count,
-             constant uchar* lights,
-             uint light_count,
-             constant uchar* shapes,
-             uint shape_count) {
+float3 compute_direct_lighting(HitRecord rec,
+                               float3 attenuation,
+                               constant uchar* lights,
+                               uint light_count,
+                               constant uchar* shapes,
+                               uint shape_count) {
+    float3 color = float3(0.0f);
 
-    // Fetch material
-    float3 albedo = float3(0.5f);
-    if (rec.material_index < material_count) {
-        constant GPUMaterial& mat = *(constant GPUMaterial*)(materials + rec.material_index * 48);
-        albedo = mat.albedo;
-    }
-
-    // Ambient term
-    float3 color = 0.05f * albedo;
-
-    // Direct illumination from each light
     for (uint i = 0; i < light_count; ++i) {
         constant GPULight& light = *(constant GPULight*)(lights + i * 64);
 
@@ -439,7 +483,7 @@ float3 shade(HitRecord rec,
 
         if (!in_shadow) {
             float diffuse_factor = max(0.0f, dot(rec.normal, light_dir));
-            color += albedo * light_intensity * diffuse_factor;
+            color += attenuation * light_intensity * diffuse_factor;
         }
     }
 
@@ -447,7 +491,7 @@ float3 shade(HitRecord rec,
 }
 
 // ---------------------------------------------------------------------------
-// Main kernel
+// Main kernel: iterative multi-bounce ray tracing
 // ---------------------------------------------------------------------------
 kernel void ray_trace_kernel(
     constant GPUCamera& camera     [[buffer(0)]],
@@ -465,32 +509,156 @@ kernel void ray_trace_kernel(
     uint shape_count    = scene_counts[0];
     uint material_count = scene_counts[1];
     uint light_count    = scene_counts[2];
+    uint max_depth      = camera.max_depth;
+    uint spp            = camera.samples_per_pixel;
 
-    // Compute ray for this pixel (center sample, no jitter)
-    float3 pixel_center = camera.pixel00_loc
-                        + float(gid.x) * camera.pixel_delta_u
-                        + float(gid.y) * camera.pixel_delta_v;
-    float3 ray_direction = pixel_center - camera.lookfrom;
+    // Initialize RNG seed from pixel coordinates
+    uint rng_seed = pcg_hash(idx * 1099u + 7919u);
 
-    Ray ray;
-    ray.origin = camera.lookfrom;
-    ray.direction = ray_direction;
+    float3 accumulated_color = float3(0.0f);
 
-    float3 color;
+    for (uint sample = 0; sample < spp; ++sample) {
+        // Compute ray for this pixel with sub-pixel jitter for multi-SPP
+        float jitter_u = 0.0f;
+        float jitter_v = 0.0f;
+        if (spp > 1) {
+            jitter_u = random_float(rng_seed) - 0.5f;
+            jitter_v = random_float(rng_seed) - 0.5f;
+        }
 
-    HitRecord rec;
-    if (intersect_scene(ray, shapes, shape_count, T_MIN, T_MAX, rec)) {
-        color = shade(rec, ray, materials, material_count,
-                      lights, light_count, shapes, shape_count);
-    } else {
-        // Sky gradient: matches CPU formula exactly
-        float3 unit_dir = normalize(ray_direction);
-        float a = 0.5f * (unit_dir.y + 1.0f);
-        color = (1.0f - a) * camera.background_bottom + a * camera.background_top;
+        float3 pixel_center = camera.pixel00_loc
+                            + (float(gid.x) + jitter_u) * camera.pixel_delta_u
+                            + (float(gid.y) + jitter_v) * camera.pixel_delta_v;
+        float3 ray_direction = pixel_center - camera.lookfrom;
+
+        Ray current_ray;
+        current_ray.origin = camera.lookfrom;
+        current_ray.direction = ray_direction;
+
+        float3 throughput = float3(1.0f);
+        float3 color = float3(0.0f);
+
+        for (uint bounce = 0; bounce < max_depth; ++bounce) {
+            HitRecord rec;
+            if (!intersect_scene(current_ray, shapes, shape_count, T_MIN, T_MAX, rec)) {
+                // Sky gradient for miss
+                float3 unit_dir = normalize(current_ray.direction);
+                float a = 0.5f * (unit_dir.y + 1.0f);
+                color += throughput * ((1.0f - a) * camera.background_bottom + a * camera.background_top);
+                break;
+            }
+
+            // Fetch material
+            uint mat_type = MAT_LAMBERTIAN;
+            float3 albedo = float3(0.5f);
+            float param1 = 0.0f;
+            float3 tint = float3(1.0f);
+
+            if (rec.material_index < material_count) {
+                constant GPUMaterial& mat = *(constant GPUMaterial*)(materials + rec.material_index * 48);
+                mat_type = mat.material_type;
+                albedo = mat.albedo;
+                param1 = mat.param1;
+                tint = mat.tint;
+            }
+
+            // --- Emissive material ---
+            if (mat_type == MAT_EMISSIVE) {
+                // Emit light: intensity * color
+                float3 emission = param1 * albedo;
+                color += throughput * emission;
+                // Emissive materials do not scatter -- absorbed
+                break;
+            }
+
+            // --- Lambertian material ---
+            if (mat_type == MAT_LAMBERTIAN) {
+                // Ambient term
+                color += throughput * 0.05f * albedo;
+
+                // Direct lighting
+                color += throughput * compute_direct_lighting(
+                    rec, albedo, lights, light_count, shapes, shape_count);
+
+                // Scatter: random direction on hemisphere (normal + random in unit sphere)
+                float3 scatter_dir = rec.normal + random_in_unit_sphere(rng_seed);
+                // Catch degenerate scatter direction
+                if (dot(scatter_dir, scatter_dir) < 1e-8f) {
+                    scatter_dir = rec.normal;
+                }
+                scatter_dir = normalize(scatter_dir);
+
+                throughput *= albedo;
+                current_ray.origin = rec.point + T_MIN * rec.normal;
+                current_ray.direction = scatter_dir;
+                continue;
+            }
+
+            // --- Metal material ---
+            if (mat_type == MAT_METAL) {
+                float fuzziness = param1;
+                float3 unit_dir = normalize(current_ray.direction);
+                float3 reflected = reflect_vec(unit_dir, rec.normal);
+                float3 scatter_dir = reflected + fuzziness * random_in_unit_sphere(rng_seed);
+
+                // Check that scattered ray is in the same hemisphere as normal
+                if (dot(scatter_dir, rec.normal) <= 0.0f) {
+                    // Absorbed (fuzziness caused ray to scatter below surface)
+                    break;
+                }
+
+                // Ambient term for metal
+                color += throughput * 0.05f * albedo;
+
+                // Direct lighting for metal
+                color += throughput * compute_direct_lighting(
+                    rec, albedo, lights, light_count, shapes, shape_count);
+
+                throughput *= albedo;
+                current_ray.origin = rec.point + T_MIN * rec.normal;
+                current_ray.direction = normalize(scatter_dir);
+                continue;
+            }
+
+            // --- Dielectric material ---
+            if (mat_type == MAT_DIELECTRIC) {
+                float ior = param1;
+                float3 attenuation_color = tint;
+
+                float eta = rec.front_face ? (1.0f / ior) : ior;
+                float3 unit_dir = normalize(current_ray.direction);
+                float cos_theta = min(dot(-unit_dir, rec.normal), 1.0f);
+                float sin_theta = sqrt(1.0f - cos_theta * cos_theta);
+
+                bool cannot_refract = (eta * sin_theta > 1.0f);
+                float3 scatter_dir;
+
+                if (cannot_refract || schlick_reflectance(cos_theta, eta) > random_float(rng_seed)) {
+                    // Total internal reflection or Fresnel reflection
+                    scatter_dir = reflect_vec(unit_dir, rec.normal);
+                } else {
+                    // Refract
+                    scatter_dir = refract_vec(unit_dir, rec.normal, eta);
+                }
+
+                throughput *= attenuation_color;
+                current_ray.origin = rec.point + T_MIN * scatter_dir;
+                current_ray.direction = normalize(scatter_dir);
+                continue;
+            }
+
+            // Unknown material type: treat as absorbed
+            break;
+        }
+
+        accumulated_color += color;
     }
 
-    // Gamma correction (gamma 2.0) to match CPU renderer
-    color = sqrt(clamp(color, 0.0f, 1.0f));
+    // Average over samples
+    float3 final_color = accumulated_color / float(spp);
 
-    output[idx] = float4(color, 1.0f);
+    // Gamma correction (gamma 2.0) to match CPU renderer
+    final_color = sqrt(clamp(final_color, 0.0f, 1.0f));
+
+    output[idx] = float4(final_color, 1.0f);
 }
