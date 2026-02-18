@@ -31,6 +31,7 @@ add_executable(nwave_tests
     application/cpu_render_backend_test.cpp
     infrastructure/progress_reporter_test.cpp
     infrastructure/gpu/scene_flattener_test.cpp
+    infrastructure/gpu/bvh_flattener_test.cpp
 )
 
 target_link_libraries(nwave_tests
