@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <chrono>
 #include "infrastructure/metal/metal_render_backend.h"
 #include "application/render_backend.h"
 #include "application/renderer.h"
@@ -227,6 +228,53 @@ TEST_F(MetalRenderBackendTest, RotatedVupSkyGradientMatchesCpu) {
     ASSERT_EQ(gpu_pixels.size(), cpu_pixels.size());
     int diff = max_channel_diff(gpu_pixels, cpu_pixels);
     EXPECT_LE(diff, 1) << "Max per-channel diff (0-255) was " << diff;
+}
+
+// ---------------------------------------------------------------------------
+// Step 03-02: Multi-resolution verification and performance
+// ---------------------------------------------------------------------------
+
+// Acceptance: Given an empty scene at 800x450
+// When rendered via GPU and CPU
+// Then per-pixel RGB difference is at most 1 (float rounding)
+TEST_F(MetalRenderBackendTest, SkyGradient800x450MatchesCpu) {
+    Camera camera(Point3(0, 0, -2), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 800);
+    Scene empty_scene;
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto gpu_pixels = backend_->render(camera, empty_scene, settings);
+    auto cpu_pixels = cpu_sky_gradient(camera, settings);
+
+    ASSERT_EQ(gpu_pixels.size(), cpu_pixels.size());
+    ASSERT_EQ(gpu_pixels.size(), static_cast<size_t>(800 * 450));
+    int diff = max_channel_diff(gpu_pixels, cpu_pixels);
+    EXPECT_LE(diff, 1) << "Max per-channel diff (0-255) was " << diff;
+}
+
+// Acceptance: Given an empty scene at 3840x2160
+// When rendered via GPU (excluding init)
+// Then render time is under 50ms
+TEST_F(MetalRenderBackendTest, HighResRenderPerformanceUnder50ms) {
+    Camera camera(Point3(0, 0, -2), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 3840);
+    Scene empty_scene;
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    // Warm-up render to exclude pipeline/buffer creation overhead
+    backend_->render(camera, empty_scene, settings);
+
+    // Timed render (excluding init)
+    auto start = std::chrono::high_resolution_clock::now();
+    auto gpu_pixels = backend_->render(camera, empty_scene, settings);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    ASSERT_EQ(gpu_pixels.size(), static_cast<size_t>(3840 * 2160));
+    EXPECT_LT(elapsed_ms, 50) << "GPU render at 3840x2160 took " << elapsed_ms << "ms (limit: 50ms)";
 }
 
 } // namespace
