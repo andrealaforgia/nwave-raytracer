@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 #include "infrastructure/gpu/bvh_flattener.h"
 #include "core/gpu_types.h"
-#include <cstring>
-#include <cmath>
 
 using namespace nwave;
 
@@ -10,10 +8,7 @@ namespace {
 
 GPUShape make_sphere(float cx, float cy, float cz, float radius) {
     GPUShape shape{};
-    std::memset(&shape, 0, sizeof(GPUShape));
     shape.shape_type = static_cast<uint32_t>(GPUShapeType::SPHERE);
-    shape.material_index = 0;
-    shape.has_transform = 0;
     shape.params[0] = cx;
     shape.params[1] = cy;
     shape.params[2] = cz;
@@ -24,10 +19,7 @@ GPUShape make_sphere(float cx, float cy, float cz, float radius) {
 GPUShape make_box(float bmin_x, float bmin_y, float bmin_z,
                   float bmax_x, float bmax_y, float bmax_z) {
     GPUShape shape{};
-    std::memset(&shape, 0, sizeof(GPUShape));
     shape.shape_type = static_cast<uint32_t>(GPUShapeType::BOX);
-    shape.material_index = 0;
-    shape.has_transform = 0;
     shape.params[0] = bmin_x;
     shape.params[1] = bmin_y;
     shape.params[2] = bmin_z;
@@ -41,10 +33,7 @@ GPUShape make_triangle(float v0x, float v0y, float v0z,
                        float v1x, float v1y, float v1z,
                        float v2x, float v2y, float v2z) {
     GPUShape shape{};
-    std::memset(&shape, 0, sizeof(GPUShape));
     shape.shape_type = static_cast<uint32_t>(GPUShapeType::TRIANGLE);
-    shape.material_index = 0;
-    shape.has_transform = 0;
     shape.params[0] = v0x;
     shape.params[1] = v0y;
     shape.params[2] = v0z;

@@ -9,8 +9,7 @@
 
 namespace nwave {
 
-/// Metal render backend that dispatches GPU compute shaders.
-/// Currently produces a gradient (camera/scene ignored until Phase 03).
+/// Metal render backend that dispatches GPU compute shaders for ray tracing.
 /// Implements RenderBackend for polymorphic dispatch via the application layer.
 class MetalRenderBackend : public RenderBackend {
 public:
@@ -21,12 +20,12 @@ public:
     MetalRenderBackend& operator=(const MetalRenderBackend&) = delete;
 
     /// Initialises the Metal device, loads the shader library, and
-    /// creates the gradient_kernel pipeline.
+    /// creates compute pipelines for gradient and ray tracing kernels.
     /// Returns true if all setup succeeded.
     bool initialise(const std::string& metallib_path);
 
-    /// RenderBackend interface -- dispatches gradient kernel using
-    /// camera dimensions. Scene/camera content ignored until Phase 03.
+    /// RenderBackend interface -- flattens scene, builds BVH,
+    /// and dispatches ray tracing kernel on the GPU.
     std::vector<Color3> render(const Camera& camera, const Scene& scene,
                                const RenderSettings& settings) override;
 

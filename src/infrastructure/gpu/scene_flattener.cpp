@@ -144,7 +144,7 @@ bool flatten_shape(
         gpu_shape.params[10] = static_cast<float>(tri->v2().z());
         gpu_shape.material_index = resolve_material_index(tri->material(), material_map, materials);
     } else if (dynamic_cast<const TriangleMesh*>(shape)) {
-        std::cerr << "SceneFlattener: TriangleMesh skipped (not supported in Phase 04)\n";
+        std::cerr << "SceneFlattener: TriangleMesh skipped (not yet supported for GPU)\n";
         return false;
     } else {
         std::cerr << "SceneFlattener: unknown shape type skipped\n";
