@@ -73,25 +73,36 @@ if(NWAVE_HAS_METAL)
     endif()
 
     if(NWAVE_HAS_METAL_COMPILER)
-        set(METAL_SHADER_SOURCE
+        set(METAL_GRADIENT_SOURCE
             ${CMAKE_CURRENT_SOURCE_DIR}/infrastructure/metal/shaders/gradient.metal)
-        set(METAL_AIR_OUTPUT
+        set(METAL_RAY_TRACE_SOURCE
+            ${CMAKE_CURRENT_SOURCE_DIR}/infrastructure/metal/shaders/ray_trace.metal)
+        set(METAL_GRADIENT_AIR
             ${CMAKE_CURRENT_BINARY_DIR}/gradient.air)
+        set(METAL_RAY_TRACE_AIR
+            ${CMAKE_CURRENT_BINARY_DIR}/ray_trace.air)
         set(METAL_LIB_OUTPUT
             ${CMAKE_CURRENT_BINARY_DIR}/nwave_shaders.metallib)
 
         add_custom_command(
-            OUTPUT ${METAL_AIR_OUTPUT}
-            COMMAND xcrun -sdk macosx metal -c ${METAL_SHADER_SOURCE} -o ${METAL_AIR_OUTPUT}
-            DEPENDS ${METAL_SHADER_SOURCE}
+            OUTPUT ${METAL_GRADIENT_AIR}
+            COMMAND xcrun -sdk macosx metal -c ${METAL_GRADIENT_SOURCE} -o ${METAL_GRADIENT_AIR}
+            DEPENDS ${METAL_GRADIENT_SOURCE}
             COMMENT "Compiling gradient.metal -> gradient.air"
         )
 
         add_custom_command(
+            OUTPUT ${METAL_RAY_TRACE_AIR}
+            COMMAND xcrun -sdk macosx metal -c ${METAL_RAY_TRACE_SOURCE} -o ${METAL_RAY_TRACE_AIR}
+            DEPENDS ${METAL_RAY_TRACE_SOURCE}
+            COMMENT "Compiling ray_trace.metal -> ray_trace.air"
+        )
+
+        add_custom_command(
             OUTPUT ${METAL_LIB_OUTPUT}
-            COMMAND xcrun -sdk macosx metallib ${METAL_AIR_OUTPUT} -o ${METAL_LIB_OUTPUT}
-            DEPENDS ${METAL_AIR_OUTPUT}
-            COMMENT "Linking gradient.air -> nwave_shaders.metallib"
+            COMMAND xcrun -sdk macosx metallib ${METAL_GRADIENT_AIR} ${METAL_RAY_TRACE_AIR} -o ${METAL_LIB_OUTPUT}
+            DEPENDS ${METAL_GRADIENT_AIR} ${METAL_RAY_TRACE_AIR}
+            COMMENT "Linking gradient.air + ray_trace.air -> nwave_shaders.metallib"
         )
 
         add_custom_target(nwave_shaders ALL DEPENDS ${METAL_LIB_OUTPUT})

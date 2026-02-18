@@ -2,6 +2,7 @@
 #define NWAVE_INFRASTRUCTURE_METAL_METAL_BUFFER_MANAGER_H
 
 #include "core/vec3.h"
+#include "core/gpu_types.h"
 
 #include <memory>
 #include <vector>
@@ -24,6 +25,10 @@ public:
     /// Requires MetalDevice to have loaded the metallib and created
     /// the "gradient_kernel" pipeline before calling this method.
     std::vector<Color3> dispatch_gradient(int width, int height);
+
+    /// Dispatches the ray_trace_kernel with the given GPUCamera and
+    /// reads back the resulting sky gradient pixel data.
+    std::vector<Color3> dispatch_ray_trace(const GPUCamera& camera);
 
 private:
     struct Impl;

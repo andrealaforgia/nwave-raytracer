@@ -77,4 +77,55 @@ std::vector<Color3> MetalBufferManager::dispatch_gradient(int width, int height)
     return pixels;
 }
 
+std::vector<Color3> MetalBufferManager::dispatch_ray_trace(const GPUCamera& camera) {
+    auto* mtl_device = (__bridge id<MTLDevice>)impl_->device.native_device();
+    auto* command_queue = (__bridge id<MTLCommandQueue>)impl_->device.native_command_queue();
+    auto* pipeline = (__bridge id<MTLComputePipelineState>)impl_->device.native_pipeline("ray_trace_kernel");
+
+    if (!mtl_device || !command_queue || !pipeline) {
+        return {};
+    }
+
+    const NSUInteger width = camera.image_width;
+    const NSUInteger height = camera.image_height;
+    const NSUInteger pixel_count = width * height;
+    const NSUInteger buffer_size = pixel_count * sizeof(float) * 4; // float4 per pixel
+
+    id<MTLBuffer> output_buffer = [mtl_device newBufferWithLength:buffer_size
+                                                          options:MTLResourceStorageModeShared];
+    if (!output_buffer) {
+        return {};
+    }
+
+    id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
+    id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+
+    [encoder setComputePipelineState:pipeline];
+    [encoder setBytes:&camera length:sizeof(GPUCamera) atIndex:0];
+    [encoder setBuffer:output_buffer offset:0 atIndex:1];
+
+    MTLSize threadgroup_size = MTLSizeMake(16, 16, 1);
+    MTLSize grid_size = MTLSizeMake(width, height, 1);
+
+    [encoder dispatchThreads:grid_size threadsPerThreadgroup:threadgroup_size];
+    [encoder endEncoding];
+    [command_buffer commit];
+    [command_buffer waitUntilCompleted];
+
+    // Read back float4 data and convert to Color3
+    const float* raw = static_cast<const float*>([output_buffer contents]);
+    std::vector<Color3> pixels(pixel_count);
+
+    for (NSUInteger i = 0; i < pixel_count; ++i) {
+        const float* px = raw + i * 4;
+        pixels[i] = Color3(
+            static_cast<double>(px[0]),
+            static_cast<double>(px[1]),
+            static_cast<double>(px[2])
+        );
+    }
+
+    return pixels;
+}
+
 } // namespace nwave
