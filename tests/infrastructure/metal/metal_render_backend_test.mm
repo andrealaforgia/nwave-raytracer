@@ -1263,5 +1263,159 @@ TEST_F(MetalRenderBackendTest, PerPixelGpuCpuDifferenceWithin10For90Percent) {
         << "extreme outliers suggest a shader bug";
 }
 
+// ---------------------------------------------------------------------------
+// Step 07-03: BVH performance validation and degenerate case handling
+// ---------------------------------------------------------------------------
+
+// Helper: build a scene with N spheres at the same position (degenerate BVH)
+static Scene build_degenerate_sphere_scene(int count, Point3 position, double radius) {
+    Scene scene;
+    static Lambertian mat(Color3(0.6, 0.3, 0.3));
+    for (int i = 0; i < count; ++i) {
+        scene.add_shape(std::make_shared<Sphere>(position, radius, &mat));
+    }
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(0, 5, -5), Color3(1, 1, 1), 1.0));
+    return scene;
+}
+
+// AC1: Given a 500-sphere scene at 800x450, 1 SPP
+// When GPU renders with BVH
+// Then the render completes in under 200ms (BVH acceleration effective)
+TEST_F(MetalRenderBackendTest, BvhPerformance500SpheresRendersUnder200ms) {
+    Camera camera(Point3(0, 15, -25), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 800);
+    auto scene = build_multi_sphere_scene(500);
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    // Warm-up render to exclude pipeline/buffer creation overhead
+    backend_->render(camera, scene, settings);
+
+    // Timed render
+    auto start = std::chrono::high_resolution_clock::now();
+    auto pixels = backend_->render(camera, scene, settings);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(800 * 450));
+    EXPECT_LT(elapsed_ms, 200)
+        << "500-sphere BVH render at 800x450 took " << elapsed_ms << "ms (limit: 200ms)";
+
+    // Verify shapes are actually rendered (not just sky)
+    Scene empty_scene;
+    auto sky_pixels = backend_->render(camera, empty_scene, settings);
+    int differing_pixels = 0;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        double dr = std::abs(pixels[i].r() - sky_pixels[i].r());
+        double dg = std::abs(pixels[i].g() - sky_pixels[i].g());
+        double db = std::abs(pixels[i].b() - sky_pixels[i].b());
+        if (dr > 0.05 || dg > 0.05 || db > 0.05) {
+            ++differing_pixels;
+        }
+    }
+    EXPECT_GT(differing_pixels, 5000)
+        << "500-sphere scene should have many visible shape pixels, got "
+        << differing_pixels;
+}
+
+// AC2: Given 100 shapes all at position (0,0,0)
+// When BVH is built and GPU renders
+// Then rendering completes correctly (degenerate BVH case)
+TEST_F(MetalRenderBackendTest, DegenerateBvh100SpheresAtSamePositionRendersCorrectly) {
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    auto scene = build_degenerate_sphere_scene(100, Point3(0, 0, 0), 0.5);
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Verify no NaN values (degenerate BVH should not produce invalid results)
+    bool has_nan = false;
+    for (size_t i = 0; i < pixels.size() && !has_nan; ++i) {
+        if (std::isnan(pixels[i].r()) || std::isnan(pixels[i].g()) || std::isnan(pixels[i].b())) {
+            has_nan = true;
+        }
+    }
+    EXPECT_FALSE(has_nan) << "Degenerate BVH (100 coincident spheres) produced NaN values";
+
+    // Center pixel should hit the sphere (all 100 overlap at origin)
+    int cx = 200, cy = 112;
+    Color3 center = pixels[cy * 400 + cx];
+    EXPECT_GT(center.r(), 0.05)
+        << "Center pixel should hit the overlapping spheres (non-black)";
+
+    // Verify the scene actually rendered shapes (not just sky)
+    Scene empty_scene;
+    auto sky_pixels = backend_->render(camera, empty_scene, settings);
+    int differing_pixels = 0;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        double dr = std::abs(pixels[i].r() - sky_pixels[i].r());
+        double dg = std::abs(pixels[i].g() - sky_pixels[i].g());
+        double db = std::abs(pixels[i].b() - sky_pixels[i].b());
+        if (dr > 0.05 || dg > 0.05 || db > 0.05) {
+            ++differing_pixels;
+        }
+    }
+    EXPECT_GT(differing_pixels, 100)
+        << "Degenerate scene should still have visible shape pixels, got "
+        << differing_pixels;
+}
+
+// AC3: Given MetalRenderBackend.render() with a multi-shape scene
+// When called
+// Then BVHFlattener.build_and_flatten() is invoked automatically (BVH integration)
+// Verified by: rendering produces correct shapes (BVH was used implicitly in pipeline)
+TEST_F(MetalRenderBackendTest, BvhIntegrationMultiShapeSceneRendersCorrectly) {
+    Camera camera(Point3(0, 2, -6), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Lambertian green_mat(Color3(0.2, 0.8, 0.2));
+    Lambertian blue_mat(Color3(0.2, 0.2, 0.8));
+
+    Scene scene;
+    // 3 spheres at distinct positions -- BVH must partition correctly
+    scene.add_shape(std::make_shared<Sphere>(Point3(-2, 0, 0), 0.8, &red_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.8, &green_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(2, 0, 0), 0.8, &blue_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(0, 5, -3), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Verify each sphere is visible at its expected screen position
+    // Camera at (0,2,-6) looking at (0,0,0), 60-degree FOV, 400px wide
+    // Left sphere (-2,0,0): projects to roughly x=155
+    // Center sphere (0,0,0): projects to roughly x=200
+    // Right sphere (2,0,0): projects to roughly x=245
+    int cy = 130; // slightly below center (spheres below camera)
+
+    // Left sphere should be reddish
+    Color3 left_pixel = pixels[cy * 400 + 155];
+    EXPECT_GT(left_pixel.r(), left_pixel.b())
+        << "Left sphere should be red (R > B)";
+
+    // Center sphere should be greenish
+    Color3 center_pixel = pixels[cy * 400 + 200];
+    EXPECT_GT(center_pixel.g(), center_pixel.r())
+        << "Center sphere should be green (G > R)";
+
+    // Right sphere should be bluish
+    Color3 right_pixel = pixels[cy * 400 + 245];
+    EXPECT_GT(right_pixel.b(), right_pixel.r())
+        << "Right sphere should be blue (B > R)";
+}
+
 } // namespace
 } // namespace nwave
