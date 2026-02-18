@@ -11,6 +11,7 @@ class Scene;
 struct FlatScene {
     std::vector<GPUShape> shapes;
     std::vector<GPUMaterial> materials;
+    std::vector<GPULight> lights;
 };
 
 class SceneFlattener {

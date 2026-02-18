@@ -11,6 +11,8 @@
 #include "domain/materials/metal.h"
 #include "domain/materials/dielectric.h"
 #include "domain/materials/emissive.h"
+#include "domain/lights/point_light.h"
+#include "domain/lights/directional_light.h"
 #include <unordered_map>
 #include <iostream>
 #include <cstring>
@@ -19,11 +21,35 @@ namespace nwave {
 
 namespace {
 
+uint32_t ensure_default_material(
+    std::unordered_map<const Material*, uint32_t>& material_map,
+    std::vector<GPUMaterial>& materials)
+{
+    auto it = material_map.find(nullptr);
+    if (it != material_map.end()) {
+        return it->second;
+    }
+    GPUMaterial default_mat{};
+    default_mat.material_type = static_cast<uint32_t>(GPUMaterialType::LAMBERTIAN);
+    default_mat.albedo[0] = 0.5f;
+    default_mat.albedo[1] = 0.5f;
+    default_mat.albedo[2] = 0.5f;
+    uint32_t index = static_cast<uint32_t>(materials.size());
+    materials.push_back(default_mat);
+    material_map[nullptr] = index;
+    return index;
+}
+
 uint32_t resolve_material_index(
     const Material* mat,
     std::unordered_map<const Material*, uint32_t>& material_map,
     std::vector<GPUMaterial>& materials)
 {
+    if (!mat) {
+        std::cerr << "SceneFlattener: shape has null material, using default\n";
+        return ensure_default_material(material_map, materials);
+    }
+
     auto it = material_map.find(mat);
     if (it != material_map.end()) {
         return it->second;
@@ -158,6 +184,35 @@ FlatScene SceneFlattener::flatten(const Scene& scene) const {
         }
 
         result.shapes.push_back(gpu_shape);
+    }
+
+    for (const auto& light_ptr : scene.lights()) {
+        GPULight gpu_light{};
+
+        if (auto* point = dynamic_cast<const PointLight*>(light_ptr.get())) {
+            gpu_light.light_type = static_cast<uint32_t>(GPULightType::POINT);
+            gpu_light.position[0] = static_cast<float>(point->position().x());
+            gpu_light.position[1] = static_cast<float>(point->position().y());
+            gpu_light.position[2] = static_cast<float>(point->position().z());
+            gpu_light.color[0] = static_cast<float>(point->color().r());
+            gpu_light.color[1] = static_cast<float>(point->color().g());
+            gpu_light.color[2] = static_cast<float>(point->color().b());
+            gpu_light.intensity = static_cast<float>(point->intensity());
+        } else if (auto* dir = dynamic_cast<const DirectionalLight*>(light_ptr.get())) {
+            gpu_light.light_type = static_cast<uint32_t>(GPULightType::DIRECTIONAL);
+            gpu_light.position[0] = static_cast<float>(dir->direction().x());
+            gpu_light.position[1] = static_cast<float>(dir->direction().y());
+            gpu_light.position[2] = static_cast<float>(dir->direction().z());
+            gpu_light.color[0] = static_cast<float>(dir->color().r());
+            gpu_light.color[1] = static_cast<float>(dir->color().g());
+            gpu_light.color[2] = static_cast<float>(dir->color().b());
+            gpu_light.intensity = static_cast<float>(dir->intensity());
+        } else {
+            std::cerr << "SceneFlattener: unknown light type skipped\n";
+            continue;
+        }
+
+        result.lights.push_back(gpu_light);
     }
 
     return result;

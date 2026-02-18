@@ -7,12 +7,16 @@
 #include "domain/shapes/cylinder.h"
 #include "domain/shapes/triangle.h"
 #include "domain/shapes/transformed_shape.h"
+#include "domain/shapes/triangle_mesh.h"
 #include "domain/materials/lambertian.h"
 #include "domain/materials/metal.h"
 #include "domain/materials/dielectric.h"
 #include "domain/materials/emissive.h"
+#include "domain/lights/point_light.h"
+#include "domain/lights/directional_light.h"
 #include "core/matrix4x4.h"
 #include <cmath>
+#include <chrono>
 
 using namespace nwave;
 
@@ -199,4 +203,95 @@ TEST_F(SceneFlattenerTest, TransformedShapeHasInverseMatrix) {
                 << "Mismatch at inverse_transform[" << r << "][" << c << "]";
         }
     }
+}
+
+TEST_F(SceneFlattenerTest, PointLightFlattensCorrectly) {
+    Scene scene;
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(1.0, 2.0, 3.0), Color3(1.0, 1.0, 1.0), 0.8));
+
+    auto result = flattener.flatten(scene);
+
+    ASSERT_EQ(result.lights.size(), 1u);
+    const auto& gpu_light = result.lights[0];
+    EXPECT_EQ(gpu_light.light_type, static_cast<uint32_t>(GPULightType::POINT));
+    EXPECT_FLOAT_EQ(gpu_light.position[0], 1.0f);
+    EXPECT_FLOAT_EQ(gpu_light.position[1], 2.0f);
+    EXPECT_FLOAT_EQ(gpu_light.position[2], 3.0f);
+    EXPECT_FLOAT_EQ(gpu_light.color[0], 1.0f);
+    EXPECT_FLOAT_EQ(gpu_light.color[1], 1.0f);
+    EXPECT_FLOAT_EQ(gpu_light.color[2], 1.0f);
+    EXPECT_FLOAT_EQ(gpu_light.intensity, 0.8f);
+}
+
+TEST_F(SceneFlattenerTest, DirectionalLightFlattensCorrectly) {
+    Scene scene;
+    scene.add_light(std::make_shared<DirectionalLight>(
+        Vec3(0.0, -1.0, 0.0), Color3(0.9, 0.8, 0.7), 1.5));
+
+    auto result = flattener.flatten(scene);
+
+    ASSERT_EQ(result.lights.size(), 1u);
+    const auto& gpu_light = result.lights[0];
+    EXPECT_EQ(gpu_light.light_type, static_cast<uint32_t>(GPULightType::DIRECTIONAL));
+    EXPECT_FLOAT_EQ(gpu_light.position[0], 0.0f);
+    EXPECT_FLOAT_EQ(gpu_light.position[1], -1.0f);
+    EXPECT_FLOAT_EQ(gpu_light.position[2], 0.0f);
+    EXPECT_FLOAT_EQ(gpu_light.color[0], 0.9f);
+    EXPECT_FLOAT_EQ(gpu_light.color[1], 0.8f);
+    EXPECT_FLOAT_EQ(gpu_light.color[2], 0.7f);
+    EXPECT_FLOAT_EQ(gpu_light.intensity, 1.5f);
+}
+
+TEST_F(SceneFlattenerTest, NullMaterialDefaultsToIndex0) {
+    Scene scene;
+    // Sphere with nullptr material
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, nullptr));
+
+    auto result = flattener.flatten(scene);
+
+    ASSERT_EQ(result.shapes.size(), 1u);
+    ASSERT_GE(result.materials.size(), 1u);
+    EXPECT_EQ(result.shapes[0].material_index, 0u);
+}
+
+TEST_F(SceneFlattenerTest, TriangleMeshIsSkippedDuringFlattening) {
+    Lambertian mat(Color3(0.5, 0.5, 0.5));
+    std::vector<Point3> vertices = {
+        Point3(0, 0, 0), Point3(1, 0, 0), Point3(0, 1, 0)};
+    std::vector<Vec3> normals;
+    std::vector<int> vertex_indices = {0, 1, 2};
+    std::vector<int> normal_indices;
+
+    Scene scene;
+    scene.add_shape(std::make_shared<TriangleMesh>(
+        vertices, normals, vertex_indices, normal_indices, &mat));
+    // Also add a valid sphere to verify mesh is skipped but sphere is kept
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, &mat));
+
+    auto result = flattener.flatten(scene);
+
+    // Only the sphere should be present, mesh skipped
+    ASSERT_EQ(result.shapes.size(), 1u);
+    EXPECT_EQ(result.shapes[0].shape_type,
+              static_cast<uint32_t>(GPUShapeType::SPHERE));
+}
+
+TEST_F(SceneFlattenerTest, LargeSceneFlattensUnder10ms) {
+    Lambertian mat(Color3(0.5, 0.5, 0.5));
+    Scene scene;
+    for (int i = 0; i < 1000; ++i) {
+        scene.add_shape(std::make_shared<Sphere>(
+            Point3(i * 1.0, 0, 0), 0.5, &mat));
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto result = flattener.flatten(scene);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end - start).count();
+
+    ASSERT_EQ(result.shapes.size(), 1000u);
+    EXPECT_LT(elapsed_ms, 10) << "Flattening 1000 shapes took " << elapsed_ms << "ms";
 }
