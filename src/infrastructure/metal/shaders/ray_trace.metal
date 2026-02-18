@@ -783,11 +783,19 @@ kernel void ray_trace_kernel(
             break;
         }
 
+        // Replace NaN/inf per-sample color with zero to prevent poisoning
+        if (any(isnan(color)) || any(isinf(color))) color = float3(0.0f);
+
         accumulated_color += color;
     }
 
     // Average over samples
     float3 final_color = accumulated_color / float(spp);
+
+    // Replace NaN/inf with zero before gamma correction
+    if (isnan(final_color.x) || isinf(final_color.x)) final_color.x = 0.0f;
+    if (isnan(final_color.y) || isinf(final_color.y)) final_color.y = 0.0f;
+    if (isnan(final_color.z) || isinf(final_color.z)) final_color.z = 0.0f;
 
     // Gamma correction (gamma 2.0) to match CPU renderer
     final_color = sqrt(clamp(final_color, 0.0f, 1.0f));

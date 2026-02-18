@@ -1691,5 +1691,236 @@ TEST_F(MetalRenderBackendTest, BvhIntegrationMultiShapeSceneRendersCorrectly) {
         << "Right sphere should be blue (B > R)";
 }
 
+// ---------------------------------------------------------------------------
+// Step 08-02: Gamma correction verification and NaN clamping
+// ---------------------------------------------------------------------------
+
+// AC1: Given a gray sphere (albedo 0.5) under uniform lighting at 48 SPP
+// via GPU and CPU When center-pixel brightness is compared
+// Then values differ by at most +/-5 per channel
+TEST_F(MetalRenderBackendTest, GammaCorrectionMatchesCpuWithin5PerChannel) {
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 200);
+
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, &gray_mat));
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+    // Two directional lights for uniform illumination
+    scene.add_light(std::make_shared<DirectionalLight>(
+        Vec3(0, 1, 0), Color3(1, 1, 1), 0.8));
+    scene.add_light(std::make_shared<DirectionalLight>(
+        Vec3(0, 0, -1), Color3(1, 1, 1), 0.4));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 48;
+    settings.max_depth = 5;
+
+    auto gpu_pixels = backend_->render(camera, scene, settings);
+
+    Renderer cpu;
+    cpu.set_quiet(true);
+    auto cpu_pixels = cpu.render(camera, scene, settings);
+
+    ASSERT_EQ(gpu_pixels.size(), cpu_pixels.size());
+
+    // Check the center pixel (should hit the gray sphere)
+    int width = 200;
+    int height = static_cast<int>(gpu_pixels.size()) / width;
+    int cx = width / 2, cy = height / 2;
+    int center_idx = cy * width + cx;
+
+    int dr = std::abs(static_cast<int>(std::round(gpu_pixels[center_idx].r() * 255.0))
+                    - static_cast<int>(std::round(cpu_pixels[center_idx].r() * 255.0)));
+    int dg = std::abs(static_cast<int>(std::round(gpu_pixels[center_idx].g() * 255.0))
+                    - static_cast<int>(std::round(cpu_pixels[center_idx].g() * 255.0)));
+    int db = std::abs(static_cast<int>(std::round(gpu_pixels[center_idx].b() * 255.0))
+                    - static_cast<int>(std::round(cpu_pixels[center_idx].b() * 255.0)));
+
+    EXPECT_LE(dr, 5) << "Red channel diff at center pixel: GPU="
+        << static_cast<int>(std::round(gpu_pixels[center_idx].r() * 255.0))
+        << " CPU=" << static_cast<int>(std::round(cpu_pixels[center_idx].r() * 255.0));
+    EXPECT_LE(dg, 5) << "Green channel diff at center pixel: GPU="
+        << static_cast<int>(std::round(gpu_pixels[center_idx].g() * 255.0))
+        << " CPU=" << static_cast<int>(std::round(cpu_pixels[center_idx].g() * 255.0));
+    EXPECT_LE(db, 5) << "Blue channel diff at center pixel: GPU="
+        << static_cast<int>(std::round(gpu_pixels[center_idx].b() * 255.0))
+        << " CPU=" << static_cast<int>(std::round(cpu_pixels[center_idx].b() * 255.0));
+
+    // Also verify that the center pixel is non-trivial (sphere was actually hit)
+    EXPECT_GT(gpu_pixels[center_idx].r(), 0.1)
+        << "GPU center pixel should have non-trivial brightness (sphere hit)";
+    EXPECT_GT(cpu_pixels[center_idx].r(), 0.1)
+        << "CPU center pixel should have non-trivial brightness (sphere hit)";
+}
+
+// AC2: Given a scene producing degenerate rays When rendered via GPU
+// Then NaN samples are replaced with (0,0,0) and the final pixel is valid
+TEST_F(MetalRenderBackendTest, NanSamplesProduceValidPixels) {
+    // Use a dielectric sphere with extreme IOR to provoke edge-case rays
+    // that might produce NaN through refraction/reflection edge cases.
+    // Also place two dielectric spheres nested (hollow glass sphere trick)
+    // which can produce degenerate internal reflections.
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 200);
+
+    Dielectric glass_outer(1.5);
+    Dielectric glass_inner(1.5);  // negative radius trick not available, use nested
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+
+    Scene scene;
+    // Outer glass sphere
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, &glass_outer));
+    // Inner glass sphere (creates hollow glass, many internal bounces)
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.8, &glass_inner));
+    // Red sphere behind to catch refracted rays
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 3), 2.0, &red_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(3, 5, -3), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 16;
+    settings.max_depth = 50;  // high depth to provoke many internal bounces
+
+    auto pixels = backend_->render(camera, scene, settings);
+    int width = 200;
+    int height = static_cast<int>(pixels.size()) / width;
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(width * height));
+
+    // Verify no pixel contains NaN
+    bool has_nan = false;
+    int nan_pixel_index = -1;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        if (std::isnan(pixels[i].r()) || std::isnan(pixels[i].g()) || std::isnan(pixels[i].b())) {
+            has_nan = true;
+            nan_pixel_index = static_cast<int>(i);
+            break;
+        }
+    }
+    EXPECT_FALSE(has_nan) << "Pixel " << nan_pixel_index << " contains NaN"
+        << " (degenerate rays should be clamped to zero)";
+
+    // Verify no pixel contains infinity
+    bool has_inf = false;
+    int inf_pixel_index = -1;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        if (std::isinf(pixels[i].r()) || std::isinf(pixels[i].g()) || std::isinf(pixels[i].b())) {
+            has_inf = true;
+            inf_pixel_index = static_cast<int>(i);
+            break;
+        }
+    }
+    EXPECT_FALSE(has_inf) << "Pixel " << inf_pixel_index << " contains infinity";
+}
+
+// AC3: Given any GPU-rendered PPM When all pixel values are checked
+// Then every RGB value is in [0, 255] (i.e., the floating-point Color3 is in [0, 1])
+TEST_F(MetalRenderBackendTest, AllPixelValuesInValidRange) {
+    // Use a complex scene with all material types to stress the output range
+    Camera camera(Point3(0, 1, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 200);
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Metal chrome_mat(Color3(0.9, 0.9, 0.9), 0.0);
+    Dielectric glass_mat(1.5);
+    Emissive bright_glow(Color3(1.0, 1.0, 1.0), 5.0);  // Very bright emissive
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(-2, 0, 0), 0.8, &red_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.8, &chrome_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(2, 0, 0), 0.8, &glass_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 1.5, 0), 0.5, &bright_glow));
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -0.8, 0), Vec3(0, 1, 0), &gray_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(0, 5, -3), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 16;
+    settings.max_depth = 10;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_GT(pixels.size(), 0u);
+
+    // Every pixel's RGB channels should be in [0.0, 1.0]
+    int out_of_range_count = 0;
+    int first_oor_index = -1;
+    double first_oor_value = 0.0;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        for (int c = 0; c < 3; ++c) {
+            double v = pixels[i][c];
+            if (v < -0.001 || v > 1.001 || std::isnan(v) || std::isinf(v)) {
+                if (first_oor_index < 0) {
+                    first_oor_index = static_cast<int>(i);
+                    first_oor_value = v;
+                }
+                ++out_of_range_count;
+            }
+        }
+    }
+
+    EXPECT_EQ(out_of_range_count, 0)
+        << "Found " << out_of_range_count << " out-of-range channel values. "
+        << "First at pixel " << first_oor_index << " with value " << first_oor_value;
+}
+
+// AC4: Given GPU at very high SPP (1000) on a small image
+// When rendered Then no crash or artifact occurs
+TEST_F(MetalRenderBackendTest, HighSpp1000SmallImageNoCrashOrArtifact) {
+    // Small image to keep render time reasonable even at 1000 SPP
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 32);
+
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+    Metal mirror_mat(Color3(0.9, 0.9, 0.9), 0.0);
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, &gray_mat));
+    scene.add_shape(std::make_shared<Sphere>(Point3(-2, 0, 0), 0.8, &mirror_mat));
+    scene.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(2, 4, -3), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1000;
+    settings.max_depth = 10;
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto pixels = backend_->render(camera, scene, settings);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    int width = 32;
+    int height = static_cast<int>(pixels.size()) / width;
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(width * height));
+    ASSERT_GT(pixels.size(), 0u) << "Rendering should complete without crash";
+
+    // Must complete in reasonable time (not hang)
+    EXPECT_LT(elapsed_ms, 30000)
+        << "1000 SPP render on 32px image took " << elapsed_ms << "ms";
+
+    // Verify all pixels are valid (no NaN, no inf, in [0,1] range)
+    bool any_invalid = false;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        for (int c = 0; c < 3; ++c) {
+            double v = pixels[i][c];
+            if (std::isnan(v) || std::isinf(v) || v < -0.001 || v > 1.001) {
+                any_invalid = true;
+                break;
+            }
+        }
+        if (any_invalid) break;
+    }
+    EXPECT_FALSE(any_invalid) << "All pixels should be valid at 1000 SPP";
+
+    // Verify center pixel is non-trivial (sphere was rendered)
+    int cx = width / 2, cy = height / 2;
+    int center_idx = cy * width + cx;
+    EXPECT_GT(pixels[center_idx].r(), 0.05)
+        << "Center pixel should hit sphere (non-black) at 1000 SPP";
+}
+
 } // namespace
 } // namespace nwave
