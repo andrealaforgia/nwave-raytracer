@@ -286,6 +286,73 @@ TEST_F(CliDispatcherTest, UsageTextIncludesFpsAndOutputDirFlags) {
     EXPECT_EQ(rc, 0);
 }
 
+// --- Acceptance test: --backend flag wired to render handler ---
+
+TEST_F(CliDispatcherTest, BackendFlagParsedAndDispatchedToRenderHandler) {
+    RenderCommand captured;
+    bool handler_called = false;
+
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand& cmd) {
+        captured = cmd;
+        handler_called = true;
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml",
+                                     "--backend", "metal"};
+    auto argv = make_argv(args);
+    int rc = dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(rc, 0);
+    ASSERT_TRUE(handler_called);
+    EXPECT_EQ(captured.backend, "metal");
+    EXPECT_EQ(captured.scene_file, "scene.yaml");
+}
+
+// --- Unit tests for --backend flag behaviors ---
+
+TEST_F(CliDispatcherTest, RenderWithoutBackendFlagDefaultsToCpu) {
+    RenderCommand captured;
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand& cmd) {
+        captured = cmd;
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml"};
+    auto argv = make_argv(args);
+    dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    EXPECT_EQ(captured.backend, "cpu");
+}
+
+TEST_F(CliDispatcherTest, UnknownBackendPrintsAvailableBackendsAndReturnsNonZero) {
+    auto dispatcher = make_dispatcher();
+    dispatcher.set_render_handler([&](const RenderCommand&) {
+        return 0;
+    });
+
+    std::vector<std::string> args = {"nwave", "render", "scene.yaml",
+                                     "--backend", "vulkan"};
+    auto argv = make_argv(args);
+    int rc = dispatcher.dispatch(static_cast<int>(argv.size()), argv.data());
+
+    std::string error_output = err.str();
+    EXPECT_NE(error_output.find("Unknown backend"), std::string::npos);
+    EXPECT_NE(error_output.find("cpu"), std::string::npos);
+    EXPECT_NE(error_output.find("metal"), std::string::npos);
+    EXPECT_EQ(rc, 1);
+}
+
+TEST_F(CliDispatcherTest, UsageTextIncludesBackendFlag) {
+    int rc = dispatch({"nwave", "--help"});
+
+    std::string output = out.str();
+    EXPECT_NE(output.find("--backend"), std::string::npos);
+    EXPECT_EQ(rc, 0);
+}
+
 TEST_F(CliDispatcherTest, AnimateFlagPreservesLegacyBehavior) {
     bool legacy_called = false;
     auto dispatcher = make_dispatcher();

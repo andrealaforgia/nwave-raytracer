@@ -19,6 +19,9 @@
 #include "infrastructure/cli_dispatcher.h"
 #include "infrastructure/validator.h"
 #include "infrastructure/progress_reporter.h"
+#ifdef NWAVE_HAS_METAL
+#include "infrastructure/metal/metal_render_backend.h"
+#endif
 #include "core/math_utils.h"
 #include <yaml-cpp/yaml.h>
 #include <iostream>
@@ -206,6 +209,11 @@ static int run_legacy_animate() {
 
 static constexpr double default_aspect_ratio = 16.0 / 9.0;
 static constexpr int default_max_depth = 10;
+
+static RenderBackendType parse_backend(const std::string& name) {
+    if (name == "metal") return RenderBackendType::METAL;
+    return RenderBackendType::CPU;
+}
 static constexpr int default_render_spp = 16;
 static constexpr int animation_spp = 1;
 
@@ -245,6 +253,15 @@ static Camera build_camera_with_overrides(const std::string& yaml_content,
 }
 
 static int run_physics_animate(const RenderCommand& cmd) {
+    RenderBackendType backend = parse_backend(cmd.backend);
+
+#ifndef NWAVE_HAS_METAL
+    if (backend == RenderBackendType::METAL) {
+        std::cerr << "Error: Metal backend is only available on macOS\n";
+        return 1;
+    }
+#endif
+
     std::string yaml_content;
     if (!read_scene_file(cmd.scene_file, yaml_content)) {
         return 1;
@@ -298,6 +315,15 @@ static int run_physics_animate(const RenderCommand& cmd) {
 }
 
 static int run_render(const RenderCommand& cmd) {
+    RenderBackendType backend = parse_backend(cmd.backend);
+
+#ifndef NWAVE_HAS_METAL
+    if (backend == RenderBackendType::METAL) {
+        std::cerr << "Error: Metal backend is only available on macOS\n";
+        return 1;
+    }
+#endif
+
     std::string yaml_content;
     if (!read_scene_file(cmd.scene_file, yaml_content)) {
         return 1;
@@ -311,12 +337,33 @@ static int run_render(const RenderCommand& cmd) {
     RenderSettings settings;
     settings.samples_per_pixel = (cmd.spp > 0) ? cmd.spp : default_render_spp;
     settings.max_depth = default_max_depth;
+    settings.backend = backend;
 
     std::cout << "Rendering scene from " << cmd.scene_file << " ("
               << camera.image_width() << "x" << camera.image_height()
               << ", " << settings.samples_per_pixel << " SPP)...\n";
     std::cout << "Scene: " << result.scene.shapes().size() << " objects, "
               << result.scene.lights().size() << " lights\n";
+
+#ifdef NWAVE_HAS_METAL
+    if (backend == RenderBackendType::METAL) {
+        std::cout << "Using Metal backend\n";
+        MetalRenderBackend metal_backend;
+        if (!metal_backend.initialise("nwave_shaders.metallib")) {
+            std::cerr << "Error: failed to initialise Metal backend\n";
+            return 1;
+        }
+        auto pixels = metal_backend.render_gradient(
+            camera.image_width(), camera.image_height());
+        if (pixels.empty()) {
+            std::cerr << "Error: Metal gradient dispatch returned no pixels\n";
+            return 1;
+        }
+        write_ppm(cmd.output, pixels, camera.image_width(), camera.image_height());
+        std::cout << "Done! Saved " << cmd.output << "\n";
+        return 0;
+    }
+#endif
 
     Renderer renderer;
     auto pixels = renderer.render(camera, result.scene, settings);

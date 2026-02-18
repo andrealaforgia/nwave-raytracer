@@ -50,6 +50,7 @@ if(NWAVE_HAS_METAL)
     target_sources(nwave_infrastructure PRIVATE
         infrastructure/metal/metal_device.mm
         infrastructure/metal/metal_buffer_manager.mm
+        infrastructure/metal/metal_render_backend.mm
     )
 
     # --- Metal shader compilation: .metal -> .air -> .metallib ---

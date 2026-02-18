@@ -15,6 +15,7 @@ struct RenderCommand {
     bool physics_animate = false;
     int fps = 0;                // 0 = use YAML/default
     std::string output_dir;     // empty = use YAML/default
+    std::string backend = "cpu"; // cpu, metal
 };
 
 struct ValidateCommand {

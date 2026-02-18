@@ -29,6 +29,7 @@ void CliDispatcher::print_usage() {
          << "    -o <file>          Output filename (default: output.ppm)\n"
          << "    --fps <N>          Override frames per second\n"
          << "    --output-dir <dir> Override output directory\n"
+         << "    --backend <name>   Render backend: cpu, metal (default: cpu)\n"
          << "    --physics-animate  Run physics-driven animation\n"
          << "  validate <file.yaml> Validate a YAML scene (no render)\n"
          << "\n"
@@ -62,7 +63,16 @@ int CliDispatcher::handle_render(int argc, char* argv[]) {
             cmd.fps = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--output-dir") == 0 && i + 1 < argc) {
             cmd.output_dir = argv[++i];
+        } else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) {
+            cmd.backend = argv[++i];
         }
+    }
+
+    // Validate backend value
+    if (cmd.backend != "cpu" && cmd.backend != "metal") {
+        err_ << "Unknown backend: " << cmd.backend
+             << ". Available backends: cpu, metal\n";
+        return 1;
     }
 
     if (render_handler_) {

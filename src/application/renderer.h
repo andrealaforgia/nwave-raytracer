@@ -9,12 +9,15 @@
 
 namespace nwave {
 
+enum class RenderBackendType { CPU, METAL };
+
 struct RenderSettings {
     int samples_per_pixel = 1;
     int max_depth = 10;
     Color3 background_top = Color3(0.5, 0.7, 1.0);
     Color3 background_bottom = Color3(1.0, 1.0, 1.0);
     int num_threads = 0; // 0 = auto-detect (hardware_concurrency)
+    RenderBackendType backend = RenderBackendType::CPU;
 };
 
 class Renderer {
