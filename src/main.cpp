@@ -13,6 +13,7 @@
 #include "domain/lights/directional_light.h"
 #include "application/renderer.h"
 #include "application/animation_renderer.h"
+#include "application/cpu_render_backend.h"
 #include "infrastructure/ppm_writer.h"
 #include "infrastructure/yaml_scene_loader.h"
 #include "infrastructure/jolt_physics_simulator.h"
@@ -287,17 +288,36 @@ static int run_physics_animate(const RenderCommand& cmd) {
     auto physics = std::make_unique<JoltPhysicsSimulator>();
     int spp = (cmd.spp > 0) ? cmd.spp : animation_spp;
 
-    WriteCallback write_cb = [spp](const std::string& filename,
-                                    const Scene& scene,
-                                    const Camera& cam,
-                                    int /*width*/, int /*spp_hint*/) {
-        Renderer renderer;
-        renderer.set_quiet(true);
+    std::unique_ptr<RenderBackend> render_backend;
+
+#ifdef NWAVE_HAS_METAL
+    if (backend == RenderBackendType::METAL) {
+        auto metal_backend = std::make_unique<MetalRenderBackend>();
+        if (!metal_backend->initialise("nwave_shaders.metallib")) {
+            std::cerr << "Error: failed to initialise Metal backend for animation\n";
+            return 1;
+        }
+        render_backend = std::move(metal_backend);
+    }
+#endif
+
+    if (!render_backend) {
+        auto cpu_backend = std::make_unique<CpuRenderBackend>();
+        cpu_backend->set_quiet(true);
+        render_backend = std::move(cpu_backend);
+    }
+
+    RenderBackend* backend_ptr = render_backend.get();
+
+    WriteCallback write_cb = [spp, backend_ptr](const std::string& filename,
+                                                 const Scene& scene,
+                                                 const Camera& cam,
+                                                 int /*width*/, int /*spp_hint*/) {
         RenderSettings settings;
         settings.samples_per_pixel = spp;
         settings.max_depth = default_max_depth;
 
-        auto pixels = renderer.render(cam, scene, settings);
+        auto pixels = backend_ptr->render(cam, scene, settings);
         write_ppm(filename, pixels, cam.image_width(), cam.image_height());
     };
 
@@ -345,28 +365,29 @@ static int run_render(const RenderCommand& cmd) {
     std::cout << "Scene: " << result.scene.shapes().size() << " objects, "
               << result.scene.lights().size() << " lights\n";
 
+    std::unique_ptr<RenderBackend> render_backend;
+
 #ifdef NWAVE_HAS_METAL
     if (backend == RenderBackendType::METAL) {
         std::cout << "Using Metal backend\n";
-        MetalRenderBackend metal_backend;
-        if (!metal_backend.initialise("nwave_shaders.metallib")) {
+        auto metal_backend = std::make_unique<MetalRenderBackend>();
+        if (!metal_backend->initialise("nwave_shaders.metallib")) {
             std::cerr << "Error: failed to initialise Metal backend\n";
             return 1;
         }
-        auto pixels = metal_backend.render_gradient(
-            camera.image_width(), camera.image_height());
-        if (pixels.empty()) {
-            std::cerr << "Error: Metal gradient dispatch returned no pixels\n";
-            return 1;
-        }
-        write_ppm(cmd.output, pixels, camera.image_width(), camera.image_height());
-        std::cout << "Done! Saved " << cmd.output << "\n";
-        return 0;
+        render_backend = std::move(metal_backend);
     }
 #endif
 
-    Renderer renderer;
-    auto pixels = renderer.render(camera, result.scene, settings);
+    if (!render_backend) {
+        render_backend = std::make_unique<CpuRenderBackend>();
+    }
+
+    auto pixels = render_backend->render(camera, result.scene, settings);
+    if (pixels.empty()) {
+        std::cerr << "Error: render backend returned no pixels\n";
+        return 1;
+    }
     write_ppm(cmd.output, pixels, camera.image_width(), camera.image_height());
     std::cout << "Done! Saved " << cmd.output << "\n";
     return 0;
