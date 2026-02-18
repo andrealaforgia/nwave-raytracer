@@ -28,6 +28,7 @@ add_executable(nwave_tests
     infrastructure/jolt_physics_simulator_test.cpp
     application/animation_renderer_test.cpp
     application/render_backend_test.cpp
+    application/cpu_render_backend_test.cpp
     infrastructure/progress_reporter_test.cpp
 )
 
