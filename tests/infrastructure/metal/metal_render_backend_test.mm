@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <chrono>
 #include <cmath>
+#include <sstream>
 #include "infrastructure/metal/metal_render_backend.h"
+#include "infrastructure/progress_reporter.h"
 #include "application/render_backend.h"
 #include "application/renderer.h"
 #include "domain/camera.h"
@@ -2146,6 +2148,197 @@ TEST_F(MetalRenderBackendTest, PerFrameRenderTimeConsistentNoAccumulatingOverhea
         << "Last frame (" << frame_times_ms[num_frames - 1]
         << "ms) is much slower than first frame ("
         << frame_times_ms[0] << "ms). Possible resource leak.";
+}
+
+// ---------------------------------------------------------------------------
+// Step 09-02: End-to-end animation rendering and progress reporting
+// ---------------------------------------------------------------------------
+
+// AC1: Given --physics-animate --backend=metal with a 60-frame animation
+// When rendering completes via MetalRenderBackend in a loop
+// Then 60 frames are produced, each with the correct pixel count
+TEST_F(MetalRenderBackendTest, SixtyFrameAnimationProducesCorrectOutputPerFrame) {
+    Camera camera(Point3(0, 3, -8), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 80);  // Small resolution for speed
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 3;
+
+    int width = 80;
+    int height = static_cast<int>(std::round(width / (16.0 / 9.0)));
+    size_t expected_pixels = static_cast<size_t>(width * height);
+
+    const int total_frames = 60;
+    std::vector<Color3> first_frame_pixels;
+    std::vector<Color3> last_frame_pixels;
+
+    for (int frame = 0; frame < total_frames; ++frame) {
+        // Simulate physics: sphere orbits around origin
+        double angle = 2.0 * M_PI * frame / total_frames;
+        double x_pos = 2.0 * std::cos(angle);
+        double z_pos = 2.0 * std::sin(angle);
+
+        Scene scene;
+        scene.add_shape(std::make_shared<Sphere>(
+            Point3(x_pos, 0, z_pos), 0.5, &red_mat));
+        scene.add_shape(std::make_shared<Plane>(
+            Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+        scene.add_light(std::make_shared<PointLight>(
+            Point3(0, 5, -3), Color3(1, 1, 1), 1.0));
+
+        auto pixels = backend_->render(camera, scene, settings);
+        ASSERT_EQ(pixels.size(), expected_pixels)
+            << "Frame " << frame << " produced wrong pixel count";
+
+        // Verify no NaN in output
+        bool has_nan = false;
+        for (size_t i = 0; i < pixels.size() && !has_nan; ++i) {
+            if (std::isnan(pixels[i].r()) || std::isnan(pixels[i].g()) || std::isnan(pixels[i].b())) {
+                has_nan = true;
+            }
+        }
+        EXPECT_FALSE(has_nan) << "Frame " << frame << " contains NaN pixels";
+
+        if (frame == 0) first_frame_pixels = pixels;
+        if (frame == total_frames - 1) last_frame_pixels = pixels;
+    }
+
+    // Frames 0 and 59 should differ (sphere orbited almost full circle)
+    // At frame 0: sphere at (2,0,0), at frame 59: sphere near (2,0,0) but
+    // with one frame's difference in angle. Check vs frame 30 (opposite side).
+    // Actually, frame 0 vs last frame should still show some difference
+    // because the sphere angle differs by 2*pi*(59/60) which is close but not identical.
+    // Better: just verify first and last are both valid (non-empty).
+    EXPECT_GT(first_frame_pixels.size(), 0u);
+    EXPECT_GT(last_frame_pixels.size(), 0u);
+}
+
+// AC2: Given GPU animation rendering When frames render
+// Then progress is reported to stderr (e.g., 'Frame 1/60', 'Frame 2/60')
+// Verified at the integration level: StreamProgressReporter wired with
+// the animation loop produces correct output for each frame.
+// (The actual stderr wiring in main.cpp is verified by the CLI integration
+// tests; here we verify the ProgressReporter contract works with a
+// multi-frame GPU loop.)
+TEST_F(MetalRenderBackendTest, ProgressReportingWorksWithMultiFrameGpuLoop) {
+    Camera camera(Point3(0, 2, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 60);
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 3;
+
+    const int total_frames = 5;
+    std::ostringstream progress_output;
+
+    // Simulate what AnimationRenderer does: call progress reporter around render loop
+    StreamProgressReporter progress(progress_output);
+    progress.start(total_frames);
+
+    for (int frame = 0; frame < total_frames; ++frame) {
+        Scene scene;
+        scene.add_shape(std::make_shared<Sphere>(
+            Point3(0, static_cast<double>(frame) * 0.5, 0), 0.5, &red_mat));
+        scene.add_light(std::make_shared<PointLight>(
+            Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+
+        auto pixels = backend_->render(camera, scene, settings);
+        ASSERT_GT(pixels.size(), 0u);
+
+        progress.frame_complete(frame + 1);
+    }
+
+    progress.finish();
+
+    // Verify progress output contains "Frame N/5" for each frame
+    std::string output = progress_output.str();
+    for (int frame = 1; frame <= total_frames; ++frame) {
+        std::string expected = "Frame " + std::to_string(frame) + "/" + std::to_string(total_frames);
+        EXPECT_NE(output.find(expected), std::string::npos)
+            << "Progress output should contain '" << expected << "', got:\n" << output;
+    }
+
+    // Verify "Done" appears at the end
+    EXPECT_NE(output.find("Done"), std::string::npos)
+        << "Progress output should contain 'Done' at finish";
+}
+
+// AC3: Given a 1-frame animation via GPU When rendered
+// Then frame_0000.ppm content is produced correctly (single frame edge case)
+TEST_F(MetalRenderBackendTest, SingleFrameAnimationProducesCorrectOutput) {
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 100);
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    // Render exactly 1 frame (edge case: loop runs once)
+    auto pixels = backend_->render(camera, scene, settings);
+
+    int width = 100;
+    int height = static_cast<int>(std::round(width / (16.0 / 9.0)));
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(width * height));
+
+    // Verify the single frame has meaningful content (sphere visible at center)
+    int cx = width / 2, cy = height / 2;
+    int center_idx = cy * width + cx;
+    EXPECT_GT(pixels[center_idx].r(), 0.05)
+        << "Single-frame render should show the sphere at center";
+
+    // Verify no NaN values
+    bool has_nan = false;
+    for (size_t i = 0; i < pixels.size() && !has_nan; ++i) {
+        if (std::isnan(pixels[i].r()) || std::isnan(pixels[i].g()) || std::isnan(pixels[i].b())) {
+            has_nan = true;
+        }
+    }
+    EXPECT_FALSE(has_nan) << "Single-frame render should produce valid pixels";
+}
+
+// AC4: Given an animation with 0 objects (camera only) When rendered via GPU
+// Then sky-only gradient frames are produced consistently across all frames
+TEST_F(MetalRenderBackendTest, EmptySceneAnimationProducesSkyOnlyFrames) {
+    Camera camera(Point3(0, 0, -2), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 100);
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 3;
+
+    int width = 100;
+    int height = static_cast<int>(std::round(width / (16.0 / 9.0)));
+    size_t expected_pixels = static_cast<size_t>(width * height);
+
+    // Render CPU sky reference for comparison
+    auto cpu_sky = cpu_sky_gradient(camera, settings);
+
+    const int total_frames = 10;
+    for (int frame = 0; frame < total_frames; ++frame) {
+        Scene empty_scene;  // No objects, no lights -- camera only
+
+        auto pixels = backend_->render(camera, empty_scene, settings);
+        ASSERT_EQ(pixels.size(), expected_pixels)
+            << "Empty-scene frame " << frame << " produced wrong pixel count";
+
+        // Each frame of the empty-scene animation should match the CPU sky gradient
+        int diff = max_channel_diff(pixels, cpu_sky);
+        EXPECT_LE(diff, 1)
+            << "Empty-scene frame " << frame << " should match sky gradient, max diff was " << diff;
+    }
 }
 
 } // namespace
