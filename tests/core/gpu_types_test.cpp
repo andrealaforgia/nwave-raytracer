@@ -29,6 +29,52 @@ TEST(GPUTypesTest, GPUCameraFieldOffsetsMatchMetalBufferLayout) {
     EXPECT_EQ(offsetof(nwave::GPUCamera, max_depth),       108u);
 }
 
+// Acceptance: GPUShape struct has correct size and alignment for Metal buffer compatibility
+TEST(GPUTypesTest, GPUShapeIs128BytesAnd16ByteAligned) {
+    EXPECT_EQ(sizeof(nwave::GPUShape), 128u);
+    EXPECT_GE(alignof(nwave::GPUShape), 16u);
+}
+
+// Acceptance: GPUMaterial struct has correct size and alignment for Metal buffer compatibility
+TEST(GPUTypesTest, GPUMaterialIs48BytesAnd16ByteAligned) {
+    EXPECT_EQ(sizeof(nwave::GPUMaterial), 48u);
+    EXPECT_GE(alignof(nwave::GPUMaterial), 16u);
+}
+
+// Acceptance: GPULight struct has correct size and alignment for Metal buffer compatibility
+TEST(GPUTypesTest, GPULightIs64BytesAnd16ByteAligned) {
+    EXPECT_EQ(sizeof(nwave::GPULight), 64u);
+    EXPECT_GE(alignof(nwave::GPULight), 16u);
+}
+
+// Acceptance: LinearBVHNode struct has correct size and alignment for Metal buffer compatibility
+TEST(GPUTypesTest, LinearBVHNodeIs32BytesAnd16ByteAligned) {
+    EXPECT_EQ(sizeof(nwave::LinearBVHNode), 32u);
+    EXPECT_GE(alignof(nwave::LinearBVHNode), 16u);
+}
+
+// Acceptance: GPUShape fields are at correct offsets matching Metal buffer layout
+TEST(GPUTypesTest, GPUShapeFieldOffsetsMatchMetalLayout) {
+    EXPECT_EQ(offsetof(nwave::GPUShape, shape_type),         0u);
+    EXPECT_EQ(offsetof(nwave::GPUShape, material_index),     4u);
+    EXPECT_EQ(offsetof(nwave::GPUShape, has_transform),      8u);
+    EXPECT_EQ(offsetof(nwave::GPUShape, _pad0),             12u);
+    EXPECT_EQ(offsetof(nwave::GPUShape, params),            16u);
+    EXPECT_EQ(offsetof(nwave::GPUShape, inverse_transform), 64u);
+}
+
+// Acceptance: GPUMaterial fields are at correct offsets matching Metal buffer layout
+TEST(GPUTypesTest, GPUMaterialFieldOffsetsMatchMetalLayout) {
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, material_type),  0u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad0),          4u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad1),          8u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad2),         12u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, albedo),        16u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, param1),        28u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, tint),          32u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad3),         44u);
+}
+
 // Acceptance: GPUCamera can be zero-initialized and fields are writable
 TEST(GPUTypesTest, GPUCameraFieldsAreReadableAndWritable) {
     nwave::GPUCamera cam{};
