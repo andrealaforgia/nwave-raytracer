@@ -3,6 +3,11 @@ add_library(nwave_core
 )
 target_include_directories(nwave_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+if(NWAVE_HAS_METAL)
+    target_compile_definitions(nwave_core PUBLIC NWAVE_HAS_METAL=1)
+    target_link_libraries(nwave_core PUBLIC "${METAL_FRAMEWORK}" "${FOUNDATION_FRAMEWORK}")
+endif()
+
 add_library(nwave_domain
     domain/shapes/sphere.cpp
     domain/shapes/plane.cpp

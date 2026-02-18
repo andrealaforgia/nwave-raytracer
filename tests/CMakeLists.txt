@@ -4,6 +4,7 @@ add_executable(nwave_tests
     core/aabb_test.cpp
     core/quaternion_test.cpp
     core/matrix4x4_test.cpp
+    core/gpu_types_test.cpp
     domain/sphere_test.cpp
     domain/plane_test.cpp
     domain/triangle_test.cpp
