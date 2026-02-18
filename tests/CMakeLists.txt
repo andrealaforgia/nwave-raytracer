@@ -38,3 +38,15 @@ target_link_libraries(nwave_tests
 
 include(GoogleTest)
 gtest_discover_tests(nwave_tests)
+
+if(NWAVE_HAS_METAL)
+    add_executable(nwave_metal_tests
+        infrastructure/metal/metal_device_test.mm
+    )
+    target_link_libraries(nwave_metal_tests
+        PRIVATE
+            nwave_infrastructure
+            GTest::gtest_main
+    )
+    gtest_discover_tests(nwave_metal_tests)
+endif()

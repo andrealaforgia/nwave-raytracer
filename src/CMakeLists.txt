@@ -46,5 +46,11 @@ add_library(nwave_infrastructure
 target_include_directories(nwave_infrastructure PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(nwave_infrastructure PUBLIC nwave_application yaml-cpp::yaml-cpp Jolt)
 
+if(NWAVE_HAS_METAL)
+    target_sources(nwave_infrastructure PRIVATE
+        infrastructure/metal/metal_device.mm
+    )
+endif()
+
 add_executable(nwave main.cpp)
 target_link_libraries(nwave PRIVATE nwave_infrastructure)

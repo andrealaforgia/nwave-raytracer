@@ -7,3 +7,6 @@ entries:
   - "01-01|RED_UNIT|SKIPPED|combined_with_acceptance_tests_for_header_only_deliverable|2026-02-18"
   - "01-01|GREEN|EXECUTED|PASS|2026-02-18"
   - "01-01|REVIEW|EXECUTED|PASS|2026-02-18"
+  - "01-02|PREPARE|EXECUTED|PASS|2026-02-18"
+  - "01-02|RED_ACCEPTANCE|EXECUTED|PASS|3_tests_fail_on_assertion|2026-02-18"
+  - "01-02|RED_UNIT|SKIPPED|combined_with_acceptance_for_infrastructure_adapter|2026-02-18"
