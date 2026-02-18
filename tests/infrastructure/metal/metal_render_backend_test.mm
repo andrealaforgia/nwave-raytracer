@@ -1922,5 +1922,231 @@ TEST_F(MetalRenderBackendTest, HighSpp1000SmallImageNoCrashOrArtifact) {
         << "Center pixel should hit sphere (non-black) at 1000 SPP";
 }
 
+// ---------------------------------------------------------------------------
+// Step 09-01: Per-frame scene re-flattening and buffer re-upload verification
+// ---------------------------------------------------------------------------
+
+// AC1: Given a sphere at two different positions rendered in consecutive frames
+// When render() is called twice with different scenes
+// Then the two frames produce different pixel outputs (buffers are refreshed)
+TEST_F(MetalRenderBackendTest, ConsecutiveRendersWithDifferentScenesProduceDifferentOutput) {
+    Camera camera(Point3(0, 0, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 200);
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    // Frame 1: sphere at initial position (top of frame)
+    Scene scene_frame0;
+    auto sphere_high = std::make_shared<TransformedShape>(
+        std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat),
+        Matrix4x4::translation(0.0, 2.0, 0.0));
+    scene_frame0.add_shape(sphere_high);
+    scene_frame0.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+    scene_frame0.add_light(std::make_shared<PointLight>(
+        Point3(2, 5, -3), Color3(1, 1, 1), 1.0));
+
+    // Frame 2: sphere at final position (near ground)
+    Scene scene_frame29;
+    auto sphere_low = std::make_shared<TransformedShape>(
+        std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat),
+        Matrix4x4::translation(0.0, -0.5, 0.0));
+    scene_frame29.add_shape(sphere_low);
+    scene_frame29.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+    scene_frame29.add_light(std::make_shared<PointLight>(
+        Point3(2, 5, -3), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    auto pixels_frame0 = backend_->render(camera, scene_frame0, settings);
+    auto pixels_frame29 = backend_->render(camera, scene_frame29, settings);
+
+    ASSERT_EQ(pixels_frame0.size(), pixels_frame29.size());
+    ASSERT_GT(pixels_frame0.size(), 0u);
+
+    // Count pixels that differ between the two frames
+    int differing_pixels = 0;
+    for (size_t i = 0; i < pixels_frame0.size(); ++i) {
+        double dr = std::abs(pixels_frame0[i].r() - pixels_frame29[i].r());
+        double dg = std::abs(pixels_frame0[i].g() - pixels_frame29[i].g());
+        double db = std::abs(pixels_frame0[i].b() - pixels_frame29[i].b());
+        if (dr > 0.02 || dg > 0.02 || db > 0.02) {
+            ++differing_pixels;
+        }
+    }
+
+    // The sphere moved from y=2 to y=-0.5, so a significant number of pixels
+    // should differ (sphere silhouette is in a different location)
+    EXPECT_GT(differing_pixels, 100)
+        << "Consecutive renders with sphere at different positions should produce "
+        << "different output (got " << differing_pixels << " differing pixels). "
+        << "GPU buffers may be stale.";
+}
+
+// AC2: Given MetalRenderBackend When render() is called 30 times in a loop
+// with a sphere falling each frame Then all frames complete without crash
+// and each frame renders the correct number of pixels
+TEST_F(MetalRenderBackendTest, ThirtyFrameAnimationLoopCompletesWithoutCrash) {
+    Camera camera(Point3(0, 2, -6), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 100);  // Small resolution for speed
+
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 3;
+
+    int width = 100;
+    int height = static_cast<int>(std::round(width / (16.0 / 9.0)));
+    size_t expected_pixels = static_cast<size_t>(width * height);
+
+    const int total_frames = 30;
+    std::vector<Color3> first_frame_pixels;
+    std::vector<Color3> last_frame_pixels;
+
+    for (int frame = 0; frame < total_frames; ++frame) {
+        // Simulate a falling sphere: y position decreases each frame
+        double y_pos = 2.0 - (3.0 * frame / (total_frames - 1));
+
+        Scene scene;
+        auto sphere = std::make_shared<TransformedShape>(
+            std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat),
+            Matrix4x4::translation(0.0, y_pos, 0.0));
+        scene.add_shape(sphere);
+        scene.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+        scene.add_light(std::make_shared<PointLight>(
+            Point3(2, 5, -3), Color3(1, 1, 1), 1.0));
+
+        auto pixels = backend_->render(camera, scene, settings);
+        ASSERT_EQ(pixels.size(), expected_pixels)
+            << "Frame " << frame << " produced wrong pixel count";
+
+        if (frame == 0) first_frame_pixels = pixels;
+        if (frame == total_frames - 1) last_frame_pixels = pixels;
+    }
+
+    // First and last frames should differ (sphere moved)
+    int differing_pixels = 0;
+    for (size_t i = 0; i < first_frame_pixels.size(); ++i) {
+        double dr = std::abs(first_frame_pixels[i].r() - last_frame_pixels[i].r());
+        double dg = std::abs(first_frame_pixels[i].g() - last_frame_pixels[i].g());
+        double db = std::abs(first_frame_pixels[i].b() - last_frame_pixels[i].b());
+        if (dr > 0.02 || dg > 0.02 || db > 0.02) {
+            ++differing_pixels;
+        }
+    }
+
+    EXPECT_GT(differing_pixels, 50)
+        << "First and last frames of 30-frame animation should differ "
+        << "(sphere fell from y=2 to y=-1), got " << differing_pixels
+        << " differing pixels";
+}
+
+// AC3: Given MetalRenderBackend When render() is called N times
+// Then the Metal device is reused (single init, multiple dispatches)
+// Verified by: calling render() 10 times on the same backend instance
+// without re-initialising, and all calls succeed with valid output
+TEST_F(MetalRenderBackendTest, MetalDeviceReusedAcrossMultipleRenderCalls) {
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 100);
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 3;
+
+    int width = 100;
+    int height = static_cast<int>(std::round(width / (16.0 / 9.0)));
+    size_t expected_pixels = static_cast<size_t>(width * height);
+
+    // Call render() 10 times on the SAME backend instance (no re-init)
+    for (int i = 0; i < 10; ++i) {
+        Scene scene;
+        scene.add_shape(std::make_shared<Sphere>(
+            Point3(static_cast<double>(i) * 0.3 - 1.5, 0, 0), 0.5, &red_mat));
+        scene.add_light(std::make_shared<PointLight>(
+            Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+
+        auto pixels = backend_->render(camera, scene, settings);
+        ASSERT_EQ(pixels.size(), expected_pixels)
+            << "Render call " << i << " failed: device may not be reused correctly";
+
+        // Verify valid pixel data (no NaN)
+        EXPECT_FALSE(std::isnan(pixels[0].r()))
+            << "Render call " << i << " produced NaN in first pixel";
+    }
+}
+
+// AC4: Given per-frame GPU render time for 10 consecutive frames
+// When measured Then no frame takes more than 3x the average
+// (no per-frame re-initialization overhead accumulating)
+TEST_F(MetalRenderBackendTest, PerFrameRenderTimeConsistentNoAccumulatingOverhead) {
+    Camera camera(Point3(0, 0, -5), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    Lambertian gray_mat(Color3(0.5, 0.5, 0.5));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    // Warm-up render (exclude first-time pipeline overhead)
+    {
+        Scene warmup_scene;
+        warmup_scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat));
+        warmup_scene.add_light(std::make_shared<PointLight>(
+            Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+        backend_->render(camera, warmup_scene, settings);
+    }
+
+    const int num_frames = 10;
+    std::vector<double> frame_times_ms;
+
+    for (int frame = 0; frame < num_frames; ++frame) {
+        double y_pos = 2.0 - (3.0 * frame / (num_frames - 1));
+
+        Scene scene;
+        auto sphere = std::make_shared<TransformedShape>(
+            std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat),
+            Matrix4x4::translation(0.0, y_pos, 0.0));
+        scene.add_shape(sphere);
+        scene.add_shape(std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), &gray_mat));
+        scene.add_light(std::make_shared<PointLight>(
+            Point3(2, 5, -3), Color3(1, 1, 1), 1.0));
+
+        auto start = std::chrono::high_resolution_clock::now();
+        auto pixels = backend_->render(camera, scene, settings);
+        auto end = std::chrono::high_resolution_clock::now();
+
+        double elapsed = std::chrono::duration<double, std::milli>(end - start).count();
+        frame_times_ms.push_back(elapsed);
+
+        ASSERT_GT(pixels.size(), 0u) << "Frame " << frame << " produced empty output";
+    }
+
+    // Calculate average frame time
+    double total_time = 0.0;
+    for (double t : frame_times_ms) total_time += t;
+    double avg_time = total_time / num_frames;
+
+    // No frame should take more than 3x the average (no accumulating overhead)
+    for (int i = 0; i < num_frames; ++i) {
+        EXPECT_LT(frame_times_ms[i], avg_time * 3.0)
+            << "Frame " << i << " took " << frame_times_ms[i]
+            << "ms (avg=" << avg_time << "ms). "
+            << "Per-frame overhead may be accumulating.";
+    }
+
+    // The last frame should not be significantly slower than the first
+    // (no memory leak or resource accumulation)
+    EXPECT_LT(frame_times_ms[num_frames - 1], frame_times_ms[0] * 3.0)
+        << "Last frame (" << frame_times_ms[num_frames - 1]
+        << "ms) is much slower than first frame ("
+        << frame_times_ms[0] << "ms). Possible resource leak.";
+}
+
 } // namespace
 } // namespace nwave
