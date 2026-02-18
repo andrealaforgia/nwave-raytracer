@@ -380,6 +380,30 @@ float3 transform_normal(float3 normal, float4x4 inv_transform) {
 }
 
 // ---------------------------------------------------------------------------
+// Linear BVH node struct -- must match C++ LinearBVHNode layout (32 bytes)
+// ---------------------------------------------------------------------------
+struct LinearBVHNode {
+    float3 aabb_min;     //  0: bounding box minimum
+    uint   offset;       // 12: second child (interior) or first prim (leaf)
+    float3 aabb_max;     // 16: bounding box maximum
+    uint   count;        // 28: 0 for interior, >0 for leaf (prim count)
+};
+
+// ---------------------------------------------------------------------------
+// Ray-AABB intersection (slab method)
+// ---------------------------------------------------------------------------
+bool intersect_aabb(Ray ray, float3 aabb_min, float3 aabb_max, float t_max) {
+    float3 inv_dir = 1.0f / ray.direction;
+    float3 t0s = (aabb_min - ray.origin) * inv_dir;
+    float3 t1s = (aabb_max - ray.origin) * inv_dir;
+    float3 tsmaller = min(t0s, t1s);
+    float3 tbigger  = max(t0s, t1s);
+    float tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
+    float tmax_aabb = min(min(tbigger.x, tbigger.y), tbigger.z);
+    return tmax_aabb >= max(tmin, T_MIN) && tmin < t_max;
+}
+
+// ---------------------------------------------------------------------------
 // Scene intersection: brute-force over all shapes, find closest
 // Now returns outward_normal and computes front_face for dielectric support
 // ---------------------------------------------------------------------------
@@ -442,6 +466,94 @@ bool intersect_scene(Ray ray,
 }
 
 // ---------------------------------------------------------------------------
+// Scene intersection: BVH stack-based traversal (64-entry fixed stack)
+// ---------------------------------------------------------------------------
+bool intersect_scene_bvh(Ray ray,
+                         constant uchar* bvh_nodes,
+                         uint bvh_count,
+                         constant uchar* shapes,
+                         uint shape_count,
+                         float t_min_val,
+                         float t_max_val,
+                         thread HitRecord& rec) {
+    uint stack[64];
+    int stack_ptr = 0;
+    stack[stack_ptr++] = 0;  // start at root node
+
+    bool hit_anything = false;
+    float closest = t_max_val;
+
+    while (stack_ptr > 0) {
+        uint node_idx = stack[--stack_ptr];
+
+        if (node_idx >= bvh_count) continue;
+
+        constant LinearBVHNode& node = *(constant LinearBVHNode*)(bvh_nodes + node_idx * 32);
+
+        if (!intersect_aabb(ray, node.aabb_min, node.aabb_max, closest))
+            continue;
+
+        if (node.count > 0) {
+            // Leaf: test primitives
+            for (uint i = 0; i < node.count; ++i) {
+                uint shape_idx = node.offset + i;
+                if (shape_idx >= shape_count) continue;
+
+                constant GPUShape& shape = *(constant GPUShape*)(shapes + shape_idx * 128);
+                constant float* params = shape.params;
+
+                float t_hit = 0.0f;
+                float3 outward_normal = float3(0.0f);
+                bool did_hit = false;
+
+                Ray test_ray = ray;
+                if (shape.has_transform) {
+                    test_ray = transform_ray(ray, shape.inverse_transform);
+                }
+
+                if (shape.shape_type == SHAPE_SPHERE) {
+                    did_hit = intersect_sphere(test_ray, params, t_min_val, closest, t_hit, outward_normal);
+                } else if (shape.shape_type == SHAPE_PLANE) {
+                    did_hit = intersect_plane(test_ray, params, t_min_val, closest, t_hit, outward_normal);
+                } else if (shape.shape_type == SHAPE_BOX) {
+                    did_hit = intersect_box(test_ray, params, t_min_val, closest, t_hit, outward_normal);
+                } else if (shape.shape_type == SHAPE_CYLINDER) {
+                    did_hit = intersect_cylinder(test_ray, params, t_min_val, closest, t_hit, outward_normal);
+                } else if (shape.shape_type == SHAPE_TRIANGLE) {
+                    did_hit = intersect_triangle(test_ray, params, t_min_val, closest, t_hit, outward_normal);
+                }
+
+                if (did_hit) {
+                    hit_anything = true;
+                    closest = t_hit;
+
+                    if (shape.has_transform) {
+                        rec.point = ray.origin + t_hit * ray.direction;
+                        outward_normal = transform_normal(outward_normal, shape.inverse_transform);
+                    } else {
+                        rec.point = ray.origin + t_hit * ray.direction;
+                    }
+
+                    bool ff = dot(ray.direction, outward_normal) < 0.0f;
+                    rec.front_face = ff;
+                    rec.normal = ff ? outward_normal : -outward_normal;
+
+                    rec.t = t_hit;
+                    rec.material_index = shape.material_index;
+                }
+            }
+        } else {
+            // Interior: push children (left = node_idx+1, right = node.offset)
+            if (stack_ptr < 63) {
+                stack[stack_ptr++] = node.offset;     // right child (far)
+                stack[stack_ptr++] = node_idx + 1;    // left child (near, process first)
+            }
+        }
+    }
+    return hit_anything;
+}
+
+// ---------------------------------------------------------------------------
 // Direct lighting computation (shadow rays)
 // ---------------------------------------------------------------------------
 float3 compute_direct_lighting(HitRecord rec,
@@ -449,7 +561,9 @@ float3 compute_direct_lighting(HitRecord rec,
                                constant uchar* lights,
                                uint light_count,
                                constant uchar* shapes,
-                               uint shape_count) {
+                               uint shape_count,
+                               constant uchar* bvh_nodes,
+                               uint bvh_count) {
     float3 color = float3(0.0f);
 
     for (uint i = 0; i < light_count; ++i) {
@@ -478,8 +592,15 @@ float3 compute_direct_lighting(HitRecord rec,
         shadow_ray.direction = light_dir;
 
         HitRecord shadow_rec;
-        bool in_shadow = intersect_scene(shadow_ray, shapes, shape_count,
-                                         T_MIN, light_dist - T_MIN, shadow_rec);
+        bool in_shadow;
+        if (bvh_count > 0) {
+            in_shadow = intersect_scene_bvh(shadow_ray, bvh_nodes, bvh_count,
+                                            shapes, shape_count,
+                                            T_MIN, light_dist - T_MIN, shadow_rec);
+        } else {
+            in_shadow = intersect_scene(shadow_ray, shapes, shape_count,
+                                        T_MIN, light_dist - T_MIN, shadow_rec);
+        }
 
         if (!in_shadow) {
             float diffuse_factor = max(0.0f, dot(rec.normal, light_dir));
@@ -500,6 +621,7 @@ kernel void ray_trace_kernel(
     constant uchar* materials      [[buffer(3)]],
     constant uchar* lights         [[buffer(4)]],
     constant uint* scene_counts    [[buffer(5)]],
+    constant uchar* bvh_nodes      [[buffer(6)]],
     uint2 gid [[thread_position_in_grid]])
 {
     if (gid.x >= camera.image_width || gid.y >= camera.image_height) return;
@@ -509,6 +631,7 @@ kernel void ray_trace_kernel(
     uint shape_count    = scene_counts[0];
     uint material_count = scene_counts[1];
     uint light_count    = scene_counts[2];
+    uint bvh_count      = scene_counts[3];
     uint max_depth      = camera.max_depth;
     uint spp            = camera.samples_per_pixel;
 
@@ -540,7 +663,14 @@ kernel void ray_trace_kernel(
 
         for (uint bounce = 0; bounce < max_depth; ++bounce) {
             HitRecord rec;
-            if (!intersect_scene(current_ray, shapes, shape_count, T_MIN, T_MAX, rec)) {
+            bool scene_hit;
+            if (bvh_count > 0) {
+                scene_hit = intersect_scene_bvh(current_ray, bvh_nodes, bvh_count,
+                                                shapes, shape_count, T_MIN, T_MAX, rec);
+            } else {
+                scene_hit = intersect_scene(current_ray, shapes, shape_count, T_MIN, T_MAX, rec);
+            }
+            if (!scene_hit) {
                 // Sky gradient for miss
                 float3 unit_dir = normalize(current_ray.direction);
                 float a = 0.5f * (unit_dir.y + 1.0f);
@@ -578,7 +708,8 @@ kernel void ray_trace_kernel(
 
                 // Direct lighting
                 color += throughput * compute_direct_lighting(
-                    rec, albedo, lights, light_count, shapes, shape_count);
+                    rec, albedo, lights, light_count, shapes, shape_count,
+                    bvh_nodes, bvh_count);
 
                 // Scatter: random direction on hemisphere (normal + random in unit sphere)
                 float3 scatter_dir = rec.normal + random_in_unit_sphere(rng_seed);
@@ -612,7 +743,8 @@ kernel void ray_trace_kernel(
 
                 // Direct lighting for metal
                 color += throughput * compute_direct_lighting(
-                    rec, albedo, lights, light_count, shapes, shape_count);
+                    rec, albedo, lights, light_count, shapes, shape_count,
+                    bvh_nodes, bvh_count);
 
                 throughput *= albedo;
                 current_ray.origin = rec.point + T_MIN * rec.normal;

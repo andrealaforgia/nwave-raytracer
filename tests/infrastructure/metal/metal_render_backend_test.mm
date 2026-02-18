@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <chrono>
+#include <cmath>
 #include "infrastructure/metal/metal_render_backend.h"
 #include "application/render_backend.h"
 #include "application/renderer.h"
@@ -1071,6 +1072,143 @@ TEST_F(MetalRenderBackendTest, AllFourMaterialTypesGpuMatchesCpuAt16Spp) {
     double pct = percent_pixels_within_tolerance(gpu_pixels, cpu_pixels, 10);
     EXPECT_GE(pct, 90.0)
         << "Expected >= 90% of pixels within +/-10 per channel, got " << pct << "%";
+}
+
+// ---------------------------------------------------------------------------
+// Step 07-02: GPU BVH traversal kernel
+// ---------------------------------------------------------------------------
+
+// Helper: build a scene with N spheres spread out in a grid pattern
+static Scene build_multi_sphere_scene(int count) {
+    Scene scene;
+    static Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+    static Lambertian blue_mat(Color3(0.2, 0.2, 0.8));
+    static Lambertian green_mat(Color3(0.2, 0.8, 0.2));
+    const Lambertian* mats[] = {&red_mat, &blue_mat, &green_mat};
+
+    int side = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count))));
+    int placed = 0;
+    for (int row = 0; row < side && placed < count; ++row) {
+        for (int col = 0; col < side && placed < count; ++col) {
+            double x = (col - side / 2.0) * 1.2;
+            double z = (row - side / 2.0) * 1.2;
+            scene.add_shape(std::make_shared<Sphere>(
+                Point3(x, 0, z), 0.5, mats[placed % 3]));
+            ++placed;
+        }
+    }
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(0, 10, -5), Color3(1, 1, 1), 1.0));
+    return scene;
+}
+
+// AC1: Given a 100-sphere scene rendered with BVH via GPU
+// When the image is inspected
+// Then shapes are visible (non-trivial rendering with correct pixel count)
+TEST_F(MetalRenderBackendTest, BvhTraversal100SpheresRendersCorrectly) {
+    Camera camera(Point3(0, 8, -12), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    auto scene = build_multi_sphere_scene(100);
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 5;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Compare with sky-only render to verify shapes are visible
+    Scene empty_scene;
+    auto sky_pixels = backend_->render(camera, empty_scene, settings);
+
+    int differing_pixels = 0;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        double dr = std::abs(pixels[i].r() - sky_pixels[i].r());
+        double dg = std::abs(pixels[i].g() - sky_pixels[i].g());
+        double db = std::abs(pixels[i].b() - sky_pixels[i].b());
+        if (dr > 0.05 || dg > 0.05 || db > 0.05) {
+            ++differing_pixels;
+        }
+    }
+
+    // 100 spheres should produce many non-sky pixels
+    EXPECT_GT(differing_pixels, 2000)
+        << "Expected many pixels to differ from sky (100 spheres with BVH), got "
+        << differing_pixels;
+}
+
+// AC2: Given a 10000-shape scene When GPU traverses BVH
+// Then the fixed-size stack (64 entries) does not overflow and rendering completes
+TEST_F(MetalRenderBackendTest, BvhTraversal10000ShapesCompletesWithFixedStack) {
+    Camera camera(Point3(0, 30, -40), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 200);
+    auto scene = build_multi_sphere_scene(10000);
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+    settings.max_depth = 3;
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto pixels = backend_->render(camera, scene, settings);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    int height = static_cast<int>(pixels.size()) / 200;
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(200 * height));
+    EXPECT_GT(pixels.size(), 0u) << "Rendering should complete without crash";
+
+    // Verify no NaN values in output
+    bool has_nan = false;
+    for (size_t i = 0; i < pixels.size() && !has_nan; ++i) {
+        if (std::isnan(pixels[i].r()) || std::isnan(pixels[i].g()) || std::isnan(pixels[i].b())) {
+            has_nan = true;
+        }
+    }
+    EXPECT_FALSE(has_nan) << "BVH traversal produced NaN values (possible stack overflow)";
+
+    // Should complete in reasonable time
+    EXPECT_LT(elapsed_ms, 30000) << "10000-shape BVH traversal took " << elapsed_ms << "ms";
+}
+
+// AC3: Given an empty scene (0 shapes, empty BVH) When rendered via GPU with BVH path
+// Then the sky gradient renders correctly
+TEST_F(MetalRenderBackendTest, EmptyBvhFallsBackToSkyGradient) {
+    Camera camera(Point3(0, 0, -2), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  90.0, 16.0 / 9.0, 400);
+    Scene empty_scene;
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto gpu_pixels = backend_->render(camera, empty_scene, settings);
+    auto cpu_pixels = cpu_sky_gradient(camera, settings);
+
+    ASSERT_EQ(gpu_pixels.size(), cpu_pixels.size());
+    int diff = max_channel_diff(gpu_pixels, cpu_pixels);
+    EXPECT_LE(diff, 1) << "Empty BVH should fall back to sky gradient, max diff was " << diff;
+}
+
+// AC4: Given a single-shape scene When rendered via GPU with BVH
+// Then the shape renders correctly
+TEST_F(MetalRenderBackendTest, SingleShapeBvhRendersCorrectly) {
+    Camera camera(Point3(0, 0, -3), Point3(0, 0, 0), Vec3(0, 1, 0),
+                  60.0, 16.0 / 9.0, 400);
+    Lambertian red_mat(Color3(0.8, 0.2, 0.2));
+
+    Scene scene;
+    scene.add_shape(std::make_shared<Sphere>(Point3(0, 0, 0), 0.5, &red_mat));
+    scene.add_light(std::make_shared<PointLight>(
+        Point3(2, 3, -2), Color3(1, 1, 1), 1.0));
+
+    RenderSettings settings;
+    settings.samples_per_pixel = 1;
+
+    auto pixels = backend_->render(camera, scene, settings);
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(400 * 225));
+
+    // Center pixel should hit the sphere (reddish), not sky
+    int cx = 200, cy = 112;
+    Color3 center = pixels[cy * 400 + cx];
+    EXPECT_GT(center.r(), 0.1) << "Single sphere with BVH should be visible";
+    EXPECT_GT(center.r(), center.b()) << "Red sphere should have R > B";
 }
 
 // Acceptance Criterion 3: Given GPU renders with all 4 material types

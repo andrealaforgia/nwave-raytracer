@@ -5,6 +5,7 @@
 #include "core/gpu_types.h"
 #include "infrastructure/gpu/scene_flattener.h"
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -35,6 +36,13 @@ public:
     /// Uploads GPUShape[], GPUMaterial[], GPULight[] arrays to Metal buffers.
     std::vector<Color3> dispatch_ray_trace(const GPUCamera& camera,
                                            const FlatScene& scene);
+
+    /// Dispatches the ray_trace_kernel with camera, scene, and BVH data.
+    /// Uploads GPUShape[] (reordered by BVH), GPUMaterial[], GPULight[],
+    /// and LinearBVHNode[] arrays to Metal buffers.
+    std::vector<Color3> dispatch_ray_trace(const GPUCamera& camera,
+                                           const FlatScene& scene,
+                                           const std::vector<LinearBVHNode>& bvh_nodes);
 
 private:
     struct Impl;

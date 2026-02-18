@@ -2,6 +2,7 @@
 #include "infrastructure/metal/metal_device.h"
 #include "infrastructure/metal/metal_buffer_manager.h"
 #include "infrastructure/gpu/scene_flattener.h"
+#include "infrastructure/gpu/bvh_flattener.h"
 #include "core/gpu_types.h"
 
 #include <iostream>
@@ -93,7 +94,21 @@ std::vector<Color3> MetalRenderBackend::render(const Camera& camera,
     SceneFlattener flattener;
     FlatScene flat = flattener.flatten(scene);
     GPUCamera gpu_camera = pack_gpu_camera(camera, settings);
-    return impl_->buffer_manager->dispatch_ray_trace(gpu_camera, flat);
+
+    // Build BVH and reorder shapes for GPU traversal
+    BVHFlattener bvh_flattener;
+    auto bvh_result = bvh_flattener.build_and_flatten(flat.shapes);
+
+    if (!bvh_result.nodes.empty()) {
+        // Reorder shapes according to BVH shape_order
+        std::vector<GPUShape> reordered(flat.shapes.size());
+        for (size_t i = 0; i < bvh_result.shape_order.size(); ++i) {
+            reordered[i] = flat.shapes[bvh_result.shape_order[i]];
+        }
+        flat.shapes = std::move(reordered);
+    }
+
+    return impl_->buffer_manager->dispatch_ray_trace(gpu_camera, flat, bvh_result.nodes);
 }
 
 std::vector<Color3> MetalRenderBackend::render_gradient(int width, int height) {
