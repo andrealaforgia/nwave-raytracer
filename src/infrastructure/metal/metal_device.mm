@@ -75,4 +75,20 @@ bool MetalDevice::create_pipeline(const std::string& function_name) {
     return true;
 }
 
+void* MetalDevice::native_device() const {
+    return (__bridge void*)impl_->device;
+}
+
+void* MetalDevice::native_command_queue() const {
+    return (__bridge void*)impl_->command_queue;
+}
+
+void* MetalDevice::native_pipeline(const std::string& function_name) const {
+    auto it = impl_->pipelines.find(function_name);
+    if (it == impl_->pipelines.end()) {
+        return nullptr;
+    }
+    return (__bridge void*)it->second;
+}
+
 } // namespace nwave

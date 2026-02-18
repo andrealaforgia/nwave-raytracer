@@ -42,6 +42,7 @@ gtest_discover_tests(nwave_tests)
 if(NWAVE_HAS_METAL)
     add_executable(nwave_metal_tests
         infrastructure/metal/metal_device_test.mm
+        infrastructure/metal/metal_buffer_manager_test.mm
     )
     target_link_libraries(nwave_metal_tests
         PRIVATE

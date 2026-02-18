@@ -26,6 +26,15 @@ public:
     /// Requires a library to have been loaded first via load_library().
     bool create_pipeline(const std::string& function_name);
 
+    /// Returns the native MTLDevice as an opaque pointer (for internal use by other Metal adapters).
+    void* native_device() const;
+
+    /// Returns the native MTLCommandQueue as an opaque pointer.
+    void* native_command_queue() const;
+
+    /// Returns the native MTLComputePipelineState for the named function, or nullptr.
+    void* native_pipeline(const std::string& function_name) const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

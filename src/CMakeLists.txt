@@ -49,6 +49,7 @@ target_link_libraries(nwave_infrastructure PUBLIC nwave_application yaml-cpp::ya
 if(NWAVE_HAS_METAL)
     target_sources(nwave_infrastructure PRIVATE
         infrastructure/metal/metal_device.mm
+        infrastructure/metal/metal_buffer_manager.mm
     )
 
     # --- Metal shader compilation: .metal -> .air -> .metallib ---
