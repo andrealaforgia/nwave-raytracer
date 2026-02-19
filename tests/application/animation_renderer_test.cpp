@@ -69,6 +69,10 @@ public:
 
     void wake_all() override {}
 
+    void wake_body(int body_id) override {
+        wake_body_calls.push_back(body_id);
+    }
+
     int add_soft_body(const SoftBodyDesc& /*desc*/) override {
         throw std::runtime_error("not implemented");
     }
@@ -85,6 +89,7 @@ public:
     std::vector<AddBodyCall> add_body_calls;
     std::vector<StepCall> step_calls;
     mutable std::vector<int> get_transform_calls;
+    std::vector<int> wake_body_calls;
     Vec3 gravity_{0, 0, 0};
 
 private:
@@ -527,6 +532,143 @@ TEST(AnimationRenderer, AppliesTranslationOnlyTransformToSpheres) {
     // Both should have non-zero translation (physics moved them)
     EXPECT_NE(sphere_transform.m[1][3], 0.0) << "Sphere should have translation";
     EXPECT_NE(box_transform.m[1][3], 0.0) << "Box should have translation";
+}
+
+// ==========================================================
+// Helper: test scene with per-body wake_frame configuration
+// ==========================================================
+
+TestSceneSetup create_test_scene_with_per_body_wake() {
+    TestSceneSetup setup;
+
+    auto mat = std::make_shared<Lambertian>(Vec3(0.8, 0.8, 0.8));
+    setup.materials.push_back(mat);
+
+    // Shape 0: Ground plane (static) - body_id 0
+    auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
+    setup.scene.add_shape(ground);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+
+    // Shape 1: Dynamic box, start_asleep=true, wake_frame=3 - body_id 1
+    auto box1 = std::make_shared<Box>(Point3(-0.5, 0, -0.5), Point3(0.5, 1, 0.5), mat.get());
+    setup.scene.add_shape(box1);
+    PhysicsProperties box1_props{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3};
+    box1_props.start_asleep = true;
+    box1_props.wake_frame = 3;
+    setup.shape_physics.push_back(box1_props);
+
+    // Shape 2: Dynamic box, start_asleep=true, no wake_frame - body_id 2
+    auto box2 = std::make_shared<Box>(Point3(1, 0, -0.5), Point3(2, 1, 0.5), mat.get());
+    setup.scene.add_shape(box2);
+    PhysicsProperties box2_props{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3};
+    box2_props.start_asleep = true;
+    // No wake_frame set
+    setup.shape_physics.push_back(box2_props);
+
+    // Shape 3: Dynamic box, no start_asleep, no wake_frame - body_id 3
+    auto box3 = std::make_shared<Box>(Point3(3, 0, -0.5), Point3(4, 1, 0.5), mat.get());
+    setup.scene.add_shape(box3);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+
+    return setup;
+}
+
+// ==========================================================
+// ACCEPTANCE TEST: Per-body wake_frame check (03-01)
+// ==========================================================
+
+TEST(AnimationRendererAcceptance, WakesIndividualBodiesAtTheirConfiguredWakeFrame) {
+    // 5 frames at 10fps, no global wake (wake_frame=-1 effectively)
+    AnimationConfig config{0.5, 0.01, 10.0, "out/"};
+    config.wake_frame = -1;  // No global wake
+    ASSERT_EQ(config.total_frames(), 5);
+
+    auto test_scene = create_test_scene_with_per_body_wake();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+    auto* physics_ptr = physics.get();
+
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // AC1: Body 1 (wake_frame=3) should have wake_body called exactly once
+    int body1_wake_count = 0;
+    for (int id : physics_ptr->wake_body_calls) {
+        if (id == 1) body1_wake_count++;
+    }
+    EXPECT_EQ(body1_wake_count, 1)
+        << "Body with wake_frame=3 should be woken exactly once";
+
+    // AC2: Body 2 (start_asleep, no wake_frame) should NOT have wake_body called
+    int body2_wake_count = 0;
+    for (int id : physics_ptr->wake_body_calls) {
+        if (id == 2) body2_wake_count++;
+    }
+    EXPECT_EQ(body2_wake_count, 0)
+        << "Body with start_asleep but no wake_frame should not be individually woken";
+
+    // AC3: Body 3 (not start_asleep) should NOT have wake_body called
+    int body3_wake_count = 0;
+    for (int id : physics_ptr->wake_body_calls) {
+        if (id == 3) body3_wake_count++;
+    }
+    EXPECT_EQ(body3_wake_count, 0)
+        << "Body without start_asleep should not be individually woken";
+}
+
+// ==========================================================
+// UNIT TEST: Per-body wake at correct frame (03-01)
+// Test Budget: 2 behaviors x 2 = 4 max. Using 1 test.
+// Behaviors: (1) wake_body called for body with wake_frame at correct frame
+//            (2) global wake_frame still works alongside per-body wake
+// ==========================================================
+
+TEST(AnimationRenderer, CallsWakeBodyAtPerBodyWakeFrame) {
+    // 5 frames, body 1 has wake_frame=3
+    AnimationConfig config{0.5, 0.01, 10.0, "out/"};
+    config.wake_frame = -1;
+    ASSERT_EQ(config.total_frames(), 5);
+
+    auto test_scene = create_test_scene_with_per_body_wake();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+    auto* physics_ptr = physics.get();
+
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // Only body_id=1 should appear in wake_body_calls
+    ASSERT_EQ(static_cast<int>(physics_ptr->wake_body_calls.size()), 1);
+    EXPECT_EQ(physics_ptr->wake_body_calls[0], 1);
+}
+
+TEST(AnimationRenderer, GlobalWakeFrameStillWorksAlongsidePerBodyWake) {
+    // 5 frames, global wake at frame 2, per-body wake at frame 3
+    AnimationConfig config{0.5, 0.01, 10.0, "out/"};
+    config.wake_frame = 2;
+    ASSERT_EQ(config.total_frames(), 5);
+
+    auto test_scene = create_test_scene_with_per_body_wake();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+    auto* physics_ptr = physics.get();
+
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // Per-body wake_body should still be called for body 1 at frame 3
+    // even when global wake_all fires at frame 2
+    ASSERT_EQ(static_cast<int>(physics_ptr->wake_body_calls.size()), 1);
+    EXPECT_EQ(physics_ptr->wake_body_calls[0], 1);
 }
 
 } // namespace

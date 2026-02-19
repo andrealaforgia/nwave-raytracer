@@ -24,3 +24,8 @@ steps:
     tests: PASS
     timestamp: "2026-02-19"
     summary: "Replaced throwing stub for wake_body(int body_id) in jolt_physics_simulator.cpp with real implementation that validates body_id and calls ActivateBody. Three integration tests: sleeping kinematic body activates and moves after wake, wake on active body is safe, invalid id throws. All 340 tests pass."
+  - step_id: "03-01"
+    status: COMMIT
+    tests: PASS
+    timestamp: "2026-02-19"
+    summary: "Added per-body wake_frame check in animation render loop. After global wake_all, iterates shape_physics_ and calls wake_body for bodies whose wake_frame matches current frame. 1 acceptance test + 2 unit tests. All 343 tests pass."

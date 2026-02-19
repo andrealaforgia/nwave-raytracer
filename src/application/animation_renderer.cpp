@@ -232,6 +232,15 @@ int AnimationRenderer::render() {
         if (frame == config_.wake_frame) {
             physics_->wake_all();
         }
+
+        // Per-body wake: activate individual bodies at their specified wake frame
+        for (int i = 0; i < shape_count; ++i) {
+            if (i < static_cast<int>(shape_physics_.size()) &&
+                shape_physics_[i].wake_frame.has_value() &&
+                shape_physics_[i].wake_frame.value() == frame) {
+                physics_->wake_body(body_ids[i]);
+            }
+        }
     }
 
     if (progress_) {
