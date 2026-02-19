@@ -65,6 +65,13 @@ bool is_movable_body(BodyType body_type) {
     return body_type == BodyType::DYNAMIC || body_type == BodyType::KINEMATIC;
 }
 
+Matrix4x4 build_transform(const PhysicsTransform& t, bool translation_only) {
+    if (translation_only) {
+        return Matrix4x4::from_translation(t.position);
+    }
+    return Matrix4x4::from_translation_rotation(t.position, t.rotation);
+}
+
 } // namespace
 
 AnimationRenderer::AnimationRenderer(const AnimationConfig& config,
@@ -92,6 +99,7 @@ int AnimationRenderer::render() {
     std::vector<int> body_ids(shape_count);
     std::vector<std::shared_ptr<TransformedShape>> transformed_shapes(shape_count);
     std::vector<bool> is_dynamic(shape_count, false);
+    std::vector<bool> is_sphere(shape_count, false);
 
     for (int i = 0; i < shape_count; ++i) {
         PhysicsProperties props;
@@ -104,6 +112,7 @@ int AnimationRenderer::render() {
 
         if (is_movable_body(props.body_type)) {
             is_dynamic[i] = true;
+            is_sphere[i] = dynamic_cast<const Sphere*>(original_shapes[i].get()) != nullptr;
             transformed_shapes[i] = std::make_shared<TransformedShape>(
                 original_shapes[i], Matrix4x4::identity());
         }
@@ -112,12 +121,13 @@ int AnimationRenderer::render() {
     // Capture initial physics transforms so we can compute relative deltas.
     // The inner shapes are defined in world space, so the TransformedShape must
     // encode only the CHANGE from the initial position (identity at frame 0).
+    // For spheres, rotation is mathematically invisible (rotational symmetry),
+    // so we capture translation-only to avoid unnecessary computation.
     std::vector<Matrix4x4> initial_inv(shape_count);
     for (int i = 0; i < shape_count; ++i) {
         if (is_dynamic[i]) {
             PhysicsTransform init_t = physics_->get_transform(body_ids[i]);
-            Matrix4x4 init_mat = Matrix4x4::from_translation_rotation(
-                init_t.position, init_t.rotation);
+            Matrix4x4 init_mat = build_transform(init_t, is_sphere[i]);
             initial_inv[i] = init_mat.inverse();
         }
     }
@@ -167,12 +177,12 @@ int AnimationRenderer::render() {
     }
 
     for (int frame = 0; frame < total_frames; ++frame) {
-        // Update transforms for dynamic shapes using relative delta
+        // Update transforms for dynamic shapes using relative delta.
+        // For spheres, apply translation only (rotation is invisible due to symmetry).
         for (int i = 0; i < shape_count; ++i) {
             if (is_dynamic[i]) {
                 PhysicsTransform phys_transform = physics_->get_transform(body_ids[i]);
-                Matrix4x4 current = Matrix4x4::from_translation_rotation(
-                    phys_transform.position, phys_transform.rotation);
+                Matrix4x4 current = build_transform(phys_transform, is_sphere[i]);
                 // Relative transform: current * inverse(initial)
                 // At frame 0 this is identity, so shapes render at original positions
                 Matrix4x4 relative = current * initial_inv[i];

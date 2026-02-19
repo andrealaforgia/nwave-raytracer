@@ -30,6 +30,10 @@ public:
         return result;
     }
 
+    static constexpr Matrix4x4 from_translation(const Vec3& pos) {
+        return translation(pos.x(), pos.y(), pos.z());
+    }
+
     static Matrix4x4 from_translation_rotation(const Vec3& pos, const Quaternion& quat) {
         auto rot = quat.to_matrix();
         Matrix4x4 result;

@@ -10,10 +10,12 @@
 #include "domain/materials/lambertian.h"
 #include "domain/physics_properties.h"
 #include "core/matrix4x4.h"
+#include "domain/shapes/transformed_shape.h"
 #include <string>
 #include <vector>
 #include <functional>
 #include <stdexcept>
+#include <cmath>
 
 namespace nwave {
 namespace {
@@ -40,13 +42,15 @@ public:
 
     void step(double dt) override {
         step_calls.push_back({dt});
-        // Simulate simple downward motion for dynamic bodies
+        // Simulate downward motion and rotation for dynamic bodies
+        auto rotation_per_step = Quaternion::from_axis_angle(Vec3(0, 1, 0), 0.1);
         for (auto& [id, transform] : transforms_) {
             transform.position = Point3(
                 transform.position.x(),
                 transform.position.y() - 0.01,
                 transform.position.z()
             );
+            transform.rotation = (rotation_per_step * transform.rotation).normalized();
         }
     }
 
@@ -406,6 +410,124 @@ INSTANTIATE_TEST_SUITE_P(
         // 240Hz physics / 60fps render = 4 steps/frame
         PhysicsRatioParam{240.0, 60.0, 0.5, 4, 120}
     ));
+
+// ==========================================================
+// Helper: test scene with a dynamic sphere
+// ==========================================================
+
+TestSceneSetup create_test_scene_with_dynamic_sphere() {
+    TestSceneSetup setup;
+
+    auto mat = std::make_shared<Lambertian>(Vec3(0.8, 0.8, 0.8));
+    setup.materials.push_back(mat);
+
+    // Ground plane (static)
+    auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
+    setup.scene.add_shape(ground);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+
+    // Dynamic sphere
+    auto sphere = std::make_shared<Sphere>(Point3(0, 2, 0), 0.5, mat.get());
+    setup.scene.add_shape(sphere);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+
+    return setup;
+}
+
+TestSceneSetup create_test_scene_with_dynamic_sphere_and_box() {
+    TestSceneSetup setup;
+
+    auto mat = std::make_shared<Lambertian>(Vec3(0.8, 0.8, 0.8));
+    setup.materials.push_back(mat);
+
+    // Ground plane (static)
+    auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
+    setup.scene.add_shape(ground);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+
+    // Dynamic sphere (shape index 1, body id 1)
+    auto sphere = std::make_shared<Sphere>(Point3(0, 2, 0), 0.5, mat.get());
+    setup.scene.add_shape(sphere);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+
+    // Dynamic box (shape index 2, body id 2)
+    auto box = std::make_shared<Box>(Point3(-0.5, 3, -0.5), Point3(0.5, 4, 0.5), mat.get());
+    setup.scene.add_shape(box);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+
+    return setup;
+}
+
+// Helper: check if the upper-left 3x3 of a Matrix4x4 is identity (no rotation)
+bool is_rotation_identity(const Matrix4x4& mat, double tolerance = 1e-9) {
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+            double expected = (r == c) ? 1.0 : 0.0;
+            if (std::abs(mat.m[r][c] - expected) > tolerance) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Helper: check if the upper-left 3x3 has any rotation (not identity)
+bool has_rotation(const Matrix4x4& mat, double tolerance = 1e-9) {
+    return !is_rotation_identity(mat, tolerance);
+}
+
+// ==========================================================
+// Behavior 6: Sphere gets translation-only transform (rotation stripped)
+// Test Budget: 1 behavior x 2 = 2 max. Using 1 test.
+// ==========================================================
+
+TEST(AnimationRenderer, AppliesTranslationOnlyTransformToSpheres) {
+    // 2 frames so physics steps occur between frame 0 and frame 1,
+    // introducing rotation in the physics transform
+    AnimationConfig config{0.2, 0.01, 10.0, "out/"};
+    ASSERT_EQ(config.total_frames(), 2);
+
+    auto test_scene = create_test_scene_with_dynamic_sphere_and_box();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+
+    // Capture the scene on the LAST rendered frame (after physics has stepped)
+    Matrix4x4 sphere_transform;
+    Matrix4x4 box_transform;
+    int frame_counter = 0;
+    auto write_cb = [&](const std::string&, const Scene& scene,
+                        const Camera&, int, int) {
+        frame_counter++;
+        // Capture on frame 2 (after physics stepping has introduced rotation)
+        if (frame_counter == 2) {
+            // Shape 0 = ground (static, not wrapped)
+            // Shape 1 = sphere (dynamic, wrapped in TransformedShape)
+            // Shape 2 = box (dynamic, wrapped in TransformedShape)
+            auto sphere_ts = std::dynamic_pointer_cast<TransformedShape>(scene.shapes()[1]);
+            auto box_ts = std::dynamic_pointer_cast<TransformedShape>(scene.shapes()[2]);
+            ASSERT_NE(sphere_ts, nullptr);
+            ASSERT_NE(box_ts, nullptr);
+            sphere_transform = sphere_ts->transform();
+            box_transform = box_ts->transform();
+        }
+    };
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // Sphere: rotation part of transform must be identity (translation only)
+    EXPECT_TRUE(is_rotation_identity(sphere_transform))
+        << "Sphere should have translation-only transform (no rotation)";
+
+    // Box: rotation part must NOT be identity (full transform with rotation)
+    EXPECT_TRUE(has_rotation(box_transform))
+        << "Box should retain full rotation in its transform";
+
+    // Both should have non-zero translation (physics moved them)
+    EXPECT_NE(sphere_transform.m[1][3], 0.0) << "Sphere should have translation";
+    EXPECT_NE(box_transform.m[1][3], 0.0) << "Box should have translation";
+}
 
 } // namespace
 } // namespace nwave
