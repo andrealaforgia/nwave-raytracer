@@ -516,7 +516,7 @@ camera:
   vup: [0, 1, 0]
   vfov: 38
   aspect_ratio: 1.77777
-  image_width: 1920
+  image_width: 3840
 
 animation:
   duration: 5.0
