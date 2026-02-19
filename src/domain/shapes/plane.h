@@ -13,6 +13,7 @@ public:
 
     const Point3& point() const { return point_; }
     const Vec3& normal() const { return normal_; }
+    const Material* material() const { return material_; }
 
 private:
     Point3 point_;

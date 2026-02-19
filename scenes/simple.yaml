@@ -1,0 +1,35 @@
+# Minimal test scene: 1 sphere, 1 plane, 1 point light, camera
+# Used for fast integration testing of the nwave render pipeline
+
+materials:
+  - name: ground
+    type: lambertian
+    albedo: [0.5, 0.5, 0.5]
+
+  - name: sphere_red
+    type: lambertian
+    albedo: [0.8, 0.2, 0.2]
+
+objects:
+  - type: plane
+    point: [0.0, 0.0, 0.0]
+    normal: [0.0, 1.0, 0.0]
+    material: ground
+
+  - type: sphere
+    center: [0.0, 0.5, 0.0]
+    radius: 0.5
+    material: sphere_red
+
+lights:
+  - type: point
+    position: [2.0, 3.0, 2.0]
+    color: [1.0, 1.0, 1.0]
+    intensity: 1.0
+
+camera:
+  lookfrom: [2.0, 1.5, 3.0]
+  lookat: [0.0, 0.5, 0.0]
+  vup: [0.0, 1.0, 0.0]
+  vfov: 40.0
+  image_width: 200

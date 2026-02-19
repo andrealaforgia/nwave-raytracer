@@ -1,0 +1,388 @@
+# nWave Bowling Demo Scene
+# Matches the original hardcoded scene: chessboard floor, colored pixel-art letters,
+# green glass W. A bowling ball rolls toward the W, scattering its glass blocks.
+
+materials:
+  - name: white_metal
+    type: metal
+    albedo: [0.9, 0.9, 0.9]
+    fuzz: 0.05
+  - name: black_metal
+    type: metal
+    albedo: [0.1, 0.1, 0.1]
+    fuzz: 0.05
+  - name: green_glass
+    type: dielectric
+    ior: 1.5
+    tint: [0.4, 0.95, 0.4]
+  - name: red_mat
+    type: lambertian
+    albedo: [0.85, 0.15, 0.15]
+  - name: blue_mat
+    type: lambertian
+    albedo: [0.15, 0.25, 0.85]
+  - name: orange_mat
+    type: lambertian
+    albedo: [0.9, 0.55, 0.1]
+  - name: purple_mat
+    type: lambertian
+    albedo: [0.6, 0.2, 0.8]
+  - name: ball_metal
+    type: metal
+    albedo: [0.85, 0.25, 0.1]
+    fuzz: 0.05
+
+objects:
+  # === Ground floor (hidden below chessboard, seamless physics collision) ===
+  - { name: ground_floor, type: box, min: [-10, -1, -10], max: [10, -0.14, 10], material: black_metal }
+
+  # === Chessboard (8x8) ===
+  - { name: board_0_0, type: box, min: [-4.0, -0.15, -4.0], max: [-3.0, 0.0, -3.0], material: white_metal }
+  - { name: board_0_1, type: box, min: [-3.0, -0.15, -4.0], max: [-2.0, 0.0, -3.0], material: black_metal }
+  - { name: board_0_2, type: box, min: [-2.0, -0.15, -4.0], max: [-1.0, 0.0, -3.0], material: white_metal }
+  - { name: board_0_3, type: box, min: [-1.0, -0.15, -4.0], max: [0.0, 0.0, -3.0], material: black_metal }
+  - { name: board_0_4, type: box, min: [0.0, -0.15, -4.0], max: [1.0, 0.0, -3.0], material: white_metal }
+  - { name: board_0_5, type: box, min: [1.0, -0.15, -4.0], max: [2.0, 0.0, -3.0], material: black_metal }
+  - { name: board_0_6, type: box, min: [2.0, -0.15, -4.0], max: [3.0, 0.0, -3.0], material: white_metal }
+  - { name: board_0_7, type: box, min: [3.0, -0.15, -4.0], max: [4.0, 0.0, -3.0], material: black_metal }
+  - { name: board_1_0, type: box, min: [-4.0, -0.15, -3.0], max: [-3.0, 0.0, -2.0], material: black_metal }
+  - { name: board_1_1, type: box, min: [-3.0, -0.15, -3.0], max: [-2.0, 0.0, -2.0], material: white_metal }
+  - { name: board_1_2, type: box, min: [-2.0, -0.15, -3.0], max: [-1.0, 0.0, -2.0], material: black_metal }
+  - { name: board_1_3, type: box, min: [-1.0, -0.15, -3.0], max: [0.0, 0.0, -2.0], material: white_metal }
+  - { name: board_1_4, type: box, min: [0.0, -0.15, -3.0], max: [1.0, 0.0, -2.0], material: black_metal }
+  - { name: board_1_5, type: box, min: [1.0, -0.15, -3.0], max: [2.0, 0.0, -2.0], material: white_metal }
+  - { name: board_1_6, type: box, min: [2.0, -0.15, -3.0], max: [3.0, 0.0, -2.0], material: black_metal }
+  - { name: board_1_7, type: box, min: [3.0, -0.15, -3.0], max: [4.0, 0.0, -2.0], material: white_metal }
+  - { name: board_2_0, type: box, min: [-4.0, -0.15, -2.0], max: [-3.0, 0.0, -1.0], material: white_metal }
+  - { name: board_2_1, type: box, min: [-3.0, -0.15, -2.0], max: [-2.0, 0.0, -1.0], material: black_metal }
+  - { name: board_2_2, type: box, min: [-2.0, -0.15, -2.0], max: [-1.0, 0.0, -1.0], material: white_metal }
+  - { name: board_2_3, type: box, min: [-1.0, -0.15, -2.0], max: [0.0, 0.0, -1.0], material: black_metal }
+  - { name: board_2_4, type: box, min: [0.0, -0.15, -2.0], max: [1.0, 0.0, -1.0], material: white_metal }
+  - { name: board_2_5, type: box, min: [1.0, -0.15, -2.0], max: [2.0, 0.0, -1.0], material: black_metal }
+  - { name: board_2_6, type: box, min: [2.0, -0.15, -2.0], max: [3.0, 0.0, -1.0], material: white_metal }
+  - { name: board_2_7, type: box, min: [3.0, -0.15, -2.0], max: [4.0, 0.0, -1.0], material: black_metal }
+  - { name: board_3_0, type: box, min: [-4.0, -0.15, -1.0], max: [-3.0, 0.0, 0.0], material: black_metal }
+  - { name: board_3_1, type: box, min: [-3.0, -0.15, -1.0], max: [-2.0, 0.0, 0.0], material: white_metal }
+  - { name: board_3_2, type: box, min: [-2.0, -0.15, -1.0], max: [-1.0, 0.0, 0.0], material: black_metal }
+  - { name: board_3_3, type: box, min: [-1.0, -0.15, -1.0], max: [0.0, 0.0, 0.0], material: white_metal }
+  - { name: board_3_4, type: box, min: [0.0, -0.15, -1.0], max: [1.0, 0.0, 0.0], material: black_metal }
+  - { name: board_3_5, type: box, min: [1.0, -0.15, -1.0], max: [2.0, 0.0, 0.0], material: white_metal }
+  - { name: board_3_6, type: box, min: [2.0, -0.15, -1.0], max: [3.0, 0.0, 0.0], material: black_metal }
+  - { name: board_3_7, type: box, min: [3.0, -0.15, -1.0], max: [4.0, 0.0, 0.0], material: white_metal }
+  - { name: board_4_0, type: box, min: [-4.0, -0.15, 0.0], max: [-3.0, 0.0, 1.0], material: white_metal }
+  - { name: board_4_1, type: box, min: [-3.0, -0.15, 0.0], max: [-2.0, 0.0, 1.0], material: black_metal }
+  - { name: board_4_2, type: box, min: [-2.0, -0.15, 0.0], max: [-1.0, 0.0, 1.0], material: white_metal }
+  - { name: board_4_3, type: box, min: [-1.0, -0.15, 0.0], max: [0.0, 0.0, 1.0], material: black_metal }
+  - { name: board_4_4, type: box, min: [0.0, -0.15, 0.0], max: [1.0, 0.0, 1.0], material: white_metal }
+  - { name: board_4_5, type: box, min: [1.0, -0.15, 0.0], max: [2.0, 0.0, 1.0], material: black_metal }
+  - { name: board_4_6, type: box, min: [2.0, -0.15, 0.0], max: [3.0, 0.0, 1.0], material: white_metal }
+  - { name: board_4_7, type: box, min: [3.0, -0.15, 0.0], max: [4.0, 0.0, 1.0], material: black_metal }
+  - { name: board_5_0, type: box, min: [-4.0, -0.15, 1.0], max: [-3.0, 0.0, 2.0], material: black_metal }
+  - { name: board_5_1, type: box, min: [-3.0, -0.15, 1.0], max: [-2.0, 0.0, 2.0], material: white_metal }
+  - { name: board_5_2, type: box, min: [-2.0, -0.15, 1.0], max: [-1.0, 0.0, 2.0], material: black_metal }
+  - { name: board_5_3, type: box, min: [-1.0, -0.15, 1.0], max: [0.0, 0.0, 2.0], material: white_metal }
+  - { name: board_5_4, type: box, min: [0.0, -0.15, 1.0], max: [1.0, 0.0, 2.0], material: black_metal }
+  - { name: board_5_5, type: box, min: [1.0, -0.15, 1.0], max: [2.0, 0.0, 2.0], material: white_metal }
+  - { name: board_5_6, type: box, min: [2.0, -0.15, 1.0], max: [3.0, 0.0, 2.0], material: black_metal }
+  - { name: board_5_7, type: box, min: [3.0, -0.15, 1.0], max: [4.0, 0.0, 2.0], material: white_metal }
+  - { name: board_6_0, type: box, min: [-4.0, -0.15, 2.0], max: [-3.0, 0.0, 3.0], material: white_metal }
+  - { name: board_6_1, type: box, min: [-3.0, -0.15, 2.0], max: [-2.0, 0.0, 3.0], material: black_metal }
+  - { name: board_6_2, type: box, min: [-2.0, -0.15, 2.0], max: [-1.0, 0.0, 3.0], material: white_metal }
+  - { name: board_6_3, type: box, min: [-1.0, -0.15, 2.0], max: [0.0, 0.0, 3.0], material: black_metal }
+  - { name: board_6_4, type: box, min: [0.0, -0.15, 2.0], max: [1.0, 0.0, 3.0], material: white_metal }
+  - { name: board_6_5, type: box, min: [1.0, -0.15, 2.0], max: [2.0, 0.0, 3.0], material: black_metal }
+  - { name: board_6_6, type: box, min: [2.0, -0.15, 2.0], max: [3.0, 0.0, 3.0], material: white_metal }
+  - { name: board_6_7, type: box, min: [3.0, -0.15, 2.0], max: [4.0, 0.0, 3.0], material: black_metal }
+  - { name: board_7_0, type: box, min: [-4.0, -0.15, 3.0], max: [-3.0, 0.0, 4.0], material: black_metal }
+  - { name: board_7_1, type: box, min: [-3.0, -0.15, 3.0], max: [-2.0, 0.0, 4.0], material: white_metal }
+  - { name: board_7_2, type: box, min: [-2.0, -0.15, 3.0], max: [-1.0, 0.0, 4.0], material: black_metal }
+  - { name: board_7_3, type: box, min: [-1.0, -0.15, 3.0], max: [0.0, 0.0, 4.0], material: white_metal }
+  - { name: board_7_4, type: box, min: [0.0, -0.15, 3.0], max: [1.0, 0.0, 4.0], material: black_metal }
+  - { name: board_7_5, type: box, min: [1.0, -0.15, 3.0], max: [2.0, 0.0, 4.0], material: white_metal }
+  - { name: board_7_6, type: box, min: [2.0, -0.15, 3.0], max: [3.0, 0.0, 4.0], material: black_metal }
+  - { name: board_7_7, type: box, min: [3.0, -0.15, 3.0], max: [4.0, 0.0, 4.0], material: white_metal }
+
+  # === Bowling Ball ===
+  - name: bowling_ball
+    type: sphere
+    center: [-0.72, 0.3, 3.0]
+    radius: 0.3
+    material: ball_metal
+    physics:
+      body_type: dynamic
+      mass: 6.0
+      friction: 0.3
+      restitution: 0.2
+      initial_velocity: [0.0, 0.0, -5.0]
+
+  # === Letter 'n' (static) ===
+  - { name: n_0, type: box, min: [-1.62, 0.48, 0.5], max: [-1.5, 0.6, 0.62], material: red_mat }
+  - { name: n_1, type: box, min: [-1.5, 0.48, 0.5], max: [-1.38, 0.6, 0.62], material: red_mat }
+  - { name: n_2, type: box, min: [-1.74, 0.36, 0.5], max: [-1.62, 0.48, 0.62], material: red_mat }
+  - { name: n_3, type: box, min: [-1.38, 0.36, 0.5], max: [-1.26, 0.48, 0.62], material: red_mat }
+  - { name: n_4, type: box, min: [-1.74, 0.24, 0.5], max: [-1.62, 0.36, 0.62], material: red_mat }
+  - { name: n_5, type: box, min: [-1.38, 0.24, 0.5], max: [-1.26, 0.36, 0.62], material: red_mat }
+  - { name: n_6, type: box, min: [-1.74, 0.12, 0.5], max: [-1.62, 0.24, 0.62], material: red_mat }
+  - { name: n_7, type: box, min: [-1.38, 0.12, 0.5], max: [-1.26, 0.24, 0.62], material: red_mat }
+  - { name: n_8, type: box, min: [-1.74, 0.0, 0.5], max: [-1.62, 0.12, 0.62], material: red_mat }
+  - { name: n_9, type: box, min: [-1.38, 0.0, 0.5], max: [-1.26, 0.12, 0.62], material: red_mat }
+
+  # === Letter 'W' (dynamic physics) ===
+  - name: W_0
+    type: box
+    min: [-1.02, 0.72, 0.5]
+    max: [-0.9, 0.84, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_1
+    type: box
+    min: [-0.54, 0.72, 0.5]
+    max: [-0.42, 0.84, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_2
+    type: box
+    min: [-1.02, 0.6, 0.5]
+    max: [-0.9, 0.72, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_3
+    type: box
+    min: [-0.54, 0.6, 0.5]
+    max: [-0.42, 0.72, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_4
+    type: box
+    min: [-1.02, 0.48, 0.5]
+    max: [-0.9, 0.6, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_5
+    type: box
+    min: [-0.54, 0.48, 0.5]
+    max: [-0.42, 0.6, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_6
+    type: box
+    min: [-1.02, 0.36, 0.5]
+    max: [-0.9, 0.48, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_7
+    type: box
+    min: [-0.78, 0.36, 0.5]
+    max: [-0.66, 0.48, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_8
+    type: box
+    min: [-0.54, 0.36, 0.5]
+    max: [-0.42, 0.48, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_9
+    type: box
+    min: [-1.02, 0.24, 0.5]
+    max: [-0.9, 0.36, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_10
+    type: box
+    min: [-0.78, 0.24, 0.5]
+    max: [-0.66, 0.36, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_11
+    type: box
+    min: [-0.54, 0.24, 0.5]
+    max: [-0.42, 0.36, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_12
+    type: box
+    min: [-1.02, 0.12, 0.5]
+    max: [-0.9, 0.24, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_13
+    type: box
+    min: [-0.9, 0.12, 0.5]
+    max: [-0.78, 0.24, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_14
+    type: box
+    min: [-0.66, 0.12, 0.5]
+    max: [-0.54, 0.24, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_15
+    type: box
+    min: [-0.54, 0.12, 0.5]
+    max: [-0.42, 0.24, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_16
+    type: box
+    min: [-1.02, 0.0, 0.5]
+    max: [-0.9, 0.12, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: W_17
+    type: box
+    min: [-0.54, 0.0, 0.5]
+    max: [-0.42, 0.12, 0.62]
+    material: green_glass
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+
+  # === Letter 'a' (static) ===
+  - { name: a_0, type: box, min: [-0.18, 0.48, 0.5], max: [-0.06, 0.6, 0.62], material: blue_mat }
+  - { name: a_1, type: box, min: [-0.06, 0.48, 0.5], max: [0.06, 0.6, 0.62], material: blue_mat }
+  - { name: a_2, type: box, min: [0.06, 0.48, 0.5], max: [0.18, 0.6, 0.62], material: blue_mat }
+  - { name: a_3, type: box, min: [0.06, 0.36, 0.5], max: [0.18, 0.48, 0.62], material: blue_mat }
+  - { name: a_4, type: box, min: [-0.18, 0.24, 0.5], max: [-0.06, 0.36, 0.62], material: blue_mat }
+  - { name: a_5, type: box, min: [-0.06, 0.24, 0.5], max: [0.06, 0.36, 0.62], material: blue_mat }
+  - { name: a_6, type: box, min: [0.06, 0.24, 0.5], max: [0.18, 0.36, 0.62], material: blue_mat }
+  - { name: a_7, type: box, min: [-0.3, 0.12, 0.5], max: [-0.18, 0.24, 0.62], material: blue_mat }
+  - { name: a_8, type: box, min: [0.06, 0.12, 0.5], max: [0.18, 0.24, 0.62], material: blue_mat }
+  - { name: a_9, type: box, min: [-0.18, 0.0, 0.5], max: [-0.06, 0.12, 0.62], material: blue_mat }
+  - { name: a_10, type: box, min: [-0.06, 0.0, 0.5], max: [0.06, 0.12, 0.62], material: blue_mat }
+  - { name: a_11, type: box, min: [0.18, 0.0, 0.5], max: [0.3, 0.12, 0.62], material: blue_mat }
+
+  # === Letter 'v' (static) ===
+  - { name: v_0, type: box, min: [0.42, 0.48, 0.5], max: [0.54, 0.6, 0.62], material: orange_mat }
+  - { name: v_1, type: box, min: [0.9, 0.48, 0.5], max: [1.02, 0.6, 0.62], material: orange_mat }
+  - { name: v_2, type: box, min: [0.42, 0.36, 0.5], max: [0.54, 0.48, 0.62], material: orange_mat }
+  - { name: v_3, type: box, min: [0.9, 0.36, 0.5], max: [1.02, 0.48, 0.62], material: orange_mat }
+  - { name: v_4, type: box, min: [0.54, 0.24, 0.5], max: [0.66, 0.36, 0.62], material: orange_mat }
+  - { name: v_5, type: box, min: [0.78, 0.24, 0.5], max: [0.9, 0.36, 0.62], material: orange_mat }
+  - { name: v_6, type: box, min: [0.54, 0.12, 0.5], max: [0.66, 0.24, 0.62], material: orange_mat }
+  - { name: v_7, type: box, min: [0.78, 0.12, 0.5], max: [0.9, 0.24, 0.62], material: orange_mat }
+  - { name: v_8, type: box, min: [0.66, 0.0, 0.5], max: [0.78, 0.12, 0.62], material: orange_mat }
+
+  # === Letter 'e' (static) ===
+  - { name: e_0, type: box, min: [1.26, 0.48, 0.5], max: [1.38, 0.6, 0.62], material: purple_mat }
+  - { name: e_1, type: box, min: [1.38, 0.48, 0.5], max: [1.5, 0.6, 0.62], material: purple_mat }
+  - { name: e_2, type: box, min: [1.14, 0.36, 0.5], max: [1.26, 0.48, 0.62], material: purple_mat }
+  - { name: e_3, type: box, min: [1.5, 0.36, 0.5], max: [1.62, 0.48, 0.62], material: purple_mat }
+  - { name: e_4, type: box, min: [1.14, 0.24, 0.5], max: [1.26, 0.36, 0.62], material: purple_mat }
+  - { name: e_5, type: box, min: [1.26, 0.24, 0.5], max: [1.38, 0.36, 0.62], material: purple_mat }
+  - { name: e_6, type: box, min: [1.38, 0.24, 0.5], max: [1.5, 0.36, 0.62], material: purple_mat }
+  - { name: e_7, type: box, min: [1.5, 0.24, 0.5], max: [1.62, 0.36, 0.62], material: purple_mat }
+  - { name: e_8, type: box, min: [1.14, 0.12, 0.5], max: [1.26, 0.24, 0.62], material: purple_mat }
+  - { name: e_9, type: box, min: [1.26, 0.0, 0.5], max: [1.38, 0.12, 0.62], material: purple_mat }
+  - { name: e_10, type: box, min: [1.38, 0.0, 0.5], max: [1.5, 0.12, 0.62], material: purple_mat }
+  - { name: e_11, type: box, min: [1.5, 0.0, 0.5], max: [1.62, 0.12, 0.62], material: purple_mat }
+
+lights:
+  - type: point
+    position: [-4, 10, 2]
+    color: [1.0, 0.97, 0.9]
+    intensity: 0.7
+
+camera:
+  lookfrom: [2, 3, 6]
+  lookat: [0, 0.3, 0.5]
+  vup: [0, 1, 0]
+  vfov: 38
+  aspect_ratio: 1.77777
+  image_width: 800
+
+animation:
+  duration: 5.0
+  physics_timestep: 0.01667
+  render_fps: 30
+  wake_frame: 20
+  output_directory: "frames/bowling/"

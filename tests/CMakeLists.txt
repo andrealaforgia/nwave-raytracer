@@ -2,6 +2,9 @@ add_executable(nwave_tests
     core/vec3_test.cpp
     core/ray_test.cpp
     core/aabb_test.cpp
+    core/quaternion_test.cpp
+    core/matrix4x4_test.cpp
+    core/gpu_types_test.cpp
     domain/sphere_test.cpp
     domain/plane_test.cpp
     domain/triangle_test.cpp
@@ -13,9 +16,22 @@ add_executable(nwave_tests
     domain/emissive_test.cpp
     domain/point_light_test.cpp
     domain/camera_test.cpp
+    domain/animation_config_test.cpp
+    domain/physics_properties_test.cpp
     application/renderer_test.cpp
     application/sampling_test.cpp
     infrastructure/ppm_writer_test.cpp
+    infrastructure/yaml_scene_loader_test.cpp
+    infrastructure/cli_dispatcher_test.cpp
+    domain/transformed_shape_test.cpp
+    infrastructure/validator_test.cpp
+    infrastructure/jolt_physics_simulator_test.cpp
+    application/animation_renderer_test.cpp
+    application/render_backend_test.cpp
+    application/cpu_render_backend_test.cpp
+    infrastructure/progress_reporter_test.cpp
+    infrastructure/gpu/scene_flattener_test.cpp
+    infrastructure/gpu/bvh_flattener_test.cpp
 )
 
 target_link_libraries(nwave_tests
@@ -26,3 +42,17 @@ target_link_libraries(nwave_tests
 
 include(GoogleTest)
 gtest_discover_tests(nwave_tests)
+
+if(NWAVE_HAS_METAL)
+    add_executable(nwave_metal_tests
+        infrastructure/metal/metal_device_test.mm
+        infrastructure/metal/metal_buffer_manager_test.mm
+        infrastructure/metal/metal_render_backend_test.mm
+    )
+    target_link_libraries(nwave_metal_tests
+        PRIVATE
+            nwave_infrastructure
+            GTest::gtest_main
+    )
+    gtest_discover_tests(nwave_metal_tests)
+endif()
