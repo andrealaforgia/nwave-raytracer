@@ -249,3 +249,60 @@ TEST_F(JoltPhysicsSimulatorTest, kinematic_body_with_zero_velocity_remains_stati
     EXPECT_NEAR(transform.position.z(), 0.0, 0.01)
         << "Kinematic body with zero velocity should not move in Z";
 }
+
+TEST_F(JoltPhysicsSimulatorTest, wake_body_activates_sleeping_kinematic_body) {
+    JoltPhysicsSimulator sim;
+    sim.set_gravity(Vec3(0.0, -9.81, 0.0));
+
+    // Kinematic sphere with initial_velocity and start_asleep=true
+    auto sphere_desc = make_sphere(0.5, Point3(0.0, 5.0, 0.0), BodyType::KINEMATIC);
+    sphere_desc.properties.initial_velocity = Vec3(0.0, 0.0, -3.0);
+    sphere_desc.properties.start_asleep = true;
+    auto sphere_id = sim.add_body(sphere_desc);
+
+    const double dt = 1.0 / 60.0;
+
+    // Step 30 frames while asleep -- body should not move
+    for (int i = 0; i < 30; ++i) {
+        sim.step(dt);
+    }
+    auto before_wake = sim.get_transform(sphere_id);
+    EXPECT_NEAR(before_wake.position.z(), 0.0, 0.01)
+        << "Sleeping kinematic body should not move before wake_body";
+
+    // Wake the body
+    sim.wake_body(sphere_id);
+
+    // Step 60 more frames -- body should now move at its stored velocity
+    for (int i = 0; i < 60; ++i) {
+        sim.step(dt);
+    }
+    auto after_wake = sim.get_transform(sphere_id);
+    double expected_z = -3.0 * (60 * dt); // -3.0 after 1 second
+    EXPECT_NEAR(after_wake.position.z(), expected_z, 0.2)
+        << "Woken kinematic body should move at its stored initial_velocity";
+    EXPECT_NEAR(after_wake.position.y(), 5.0, 0.01)
+        << "Kinematic body should not be affected by gravity after wake";
+}
+
+TEST_F(JoltPhysicsSimulatorTest, wake_body_on_active_body_does_not_cause_errors) {
+    JoltPhysicsSimulator sim;
+    sim.set_gravity(Vec3(0.0, 0.0, 0.0));
+
+    // Active kinematic sphere (start_asleep defaults to false)
+    auto sphere_desc = make_sphere(0.5, Point3(0.0, 0.0, 0.0), BodyType::KINEMATIC);
+    sphere_desc.properties.initial_velocity = Vec3(1.0, 0.0, 0.0);
+    auto sphere_id = sim.add_body(sphere_desc);
+
+    sim.step(1.0 / 60.0);
+
+    // Calling wake_body on an already-active body should not throw
+    EXPECT_NO_THROW(sim.wake_body(sphere_id));
+}
+
+TEST_F(JoltPhysicsSimulatorTest, wake_body_with_invalid_id_throws) {
+    JoltPhysicsSimulator sim;
+
+    EXPECT_THROW(sim.wake_body(99), std::runtime_error);
+    EXPECT_THROW(sim.wake_body(-1), std::runtime_error);
+}

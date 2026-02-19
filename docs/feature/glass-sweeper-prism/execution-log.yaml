@@ -19,3 +19,8 @@ steps:
     tests: PASS
     timestamp: "2026-02-19"
     summary: "Widened initial_velocity condition in jolt_physics_simulator.cpp to include BodyType::KINEMATIC alongside DYNAMIC. Two integration tests: kinematic body moves at constant velocity unaffected by gravity, and kinematic body with zero velocity remains stationary. All 337 tests pass."
+  - step_id: "02-02"
+    status: COMMIT
+    tests: PASS
+    timestamp: "2026-02-19"
+    summary: "Replaced throwing stub for wake_body(int body_id) in jolt_physics_simulator.cpp with real implementation that validates body_id and calls ActivateBody. Three integration tests: sleeping kinematic body activates and moves after wake, wake on active body is safe, invalid id throws. All 340 tests pass."

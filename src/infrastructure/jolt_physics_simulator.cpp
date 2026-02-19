@@ -296,8 +296,12 @@ void JoltPhysicsSimulator::wake_all() {
     }
 }
 
-void JoltPhysicsSimulator::wake_body(int /*body_id*/) {
-    throw std::runtime_error("not implemented");
+void JoltPhysicsSimulator::wake_body(int body_id) {
+    if (!impl_->is_valid_body_id(body_id)) {
+        throw std::runtime_error("Invalid body id");
+    }
+    JPH::BodyInterface& body_interface = impl_->physics_system.GetBodyInterface();
+    body_interface.ActivateBody(impl_->body_ids[body_id]);
 }
 
 int JoltPhysicsSimulator::add_soft_body(const SoftBodyDesc& desc) {
