@@ -1,0 +1,6 @@
+steps:
+  - step_id: "01-01"
+    status: COMMIT
+    tests: PASS
+    timestamp: "2026-02-19"
+    summary: "Added std::optional<int> wake_frame field to PhysicsProperties with default std::nullopt. Two unit tests: default is nullopt, assigned value stores correctly. All 332 tests pass."

@@ -1,6 +1,8 @@
 #ifndef NWAVE_DOMAIN_PHYSICS_PROPERTIES_H
 #define NWAVE_DOMAIN_PHYSICS_PROPERTIES_H
 
+#include <optional>
+
 #include "core/vec3.h"
 
 namespace nwave {
@@ -19,6 +21,7 @@ struct PhysicsProperties {
     double friction{0.5};
     double restitution{0.3};
     bool start_asleep{false}; // sleeping bodies wake on contact
+    std::optional<int> wake_frame{std::nullopt};
 };
 
 } // namespace nwave

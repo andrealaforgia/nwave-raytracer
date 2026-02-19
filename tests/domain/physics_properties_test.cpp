@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <optional>
 #include "domain/physics_properties.h"
 #include "core/vec3.h"
 
@@ -21,6 +22,18 @@ TEST(PhysicsPropertiesTest, DefaultInitialVelocityIsZero) {
     EXPECT_DOUBLE_EQ(props.initial_velocity.x(), 0.0);
     EXPECT_DOUBLE_EQ(props.initial_velocity.y(), 0.0);
     EXPECT_DOUBLE_EQ(props.initial_velocity.z(), 0.0);
+}
+
+TEST(PhysicsPropertiesTest, DefaultWakeFrameIsNullopt) {
+    PhysicsProperties props;
+    EXPECT_EQ(props.wake_frame, std::nullopt);
+}
+
+TEST(PhysicsPropertiesTest, WakeFrameStoresAssignedValue) {
+    PhysicsProperties props;
+    props.wake_frame = 60;
+    ASSERT_TRUE(props.wake_frame.has_value());
+    EXPECT_EQ(props.wake_frame.value(), 60);
 }
 
 TEST(BodyTypeTest, EnumHasAllExpectedValues) {
