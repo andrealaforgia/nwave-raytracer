@@ -1,0 +1,115 @@
+# GPU Showcase Scene
+# Demonstrates all 5 shape types, all 4 material types, and 2 light types
+
+materials:
+  - name: ground
+    type: lambertian
+    albedo: [0.4, 0.4, 0.45]
+
+  - name: chrome
+    type: metal
+    albedo: [0.9, 0.9, 0.95]
+    fuzz: 0.0
+
+  - name: brushed_gold
+    type: metal
+    albedo: [0.85, 0.65, 0.2]
+    fuzz: 0.3
+
+  - name: glass
+    type: dielectric
+    ior: 1.5
+    tint: [0.95, 0.95, 1.0]
+
+  - name: blue_glass
+    type: dielectric
+    ior: 1.7
+    tint: [0.5, 0.7, 1.0]
+
+  - name: red_matte
+    type: lambertian
+    albedo: [0.8, 0.15, 0.1]
+
+  - name: green_matte
+    type: lambertian
+    albedo: [0.1, 0.7, 0.2]
+
+  - name: neon_orange
+    type: emissive
+    color: [1.0, 0.5, 0.1]
+    intensity: 3.0
+
+objects:
+  # Ground plane
+  - type: plane
+    point: [0.0, 0.0, 0.0]
+    normal: [0.0, 1.0, 0.0]
+    material: ground
+
+  # Chrome sphere (center)
+  - type: sphere
+    center: [0.0, 1.0, 0.0]
+    radius: 1.0
+    material: chrome
+
+  # Glass sphere (left)
+  - type: sphere
+    center: [-2.5, 0.8, 0.5]
+    radius: 0.8
+    material: glass
+
+  # Gold sphere (right)
+  - type: sphere
+    center: [2.5, 0.6, 0.8]
+    radius: 0.6
+    material: brushed_gold
+
+  # Red matte box (left back)
+  - type: box
+    min: [-4.0, 0.0, -2.0]
+    max: [-3.0, 1.2, -1.0]
+    material: red_matte
+
+  # Green cylinder (right back)
+  - type: cylinder
+    center: [3.5, 0.0, -1.5]
+    radius: 0.4
+    height: 1.8
+    material: green_matte
+
+  # Blue glass triangle (floating, right)
+  - type: triangle
+    v0: [1.5, 2.5, -1.0]
+    v1: [2.5, 2.5, -1.0]
+    v2: [2.0, 3.5, -1.0]
+    material: blue_glass
+
+  # Emissive sphere (warm glow, behind and above)
+  - type: sphere
+    center: [-1.0, 3.0, -3.0]
+    radius: 0.5
+    material: neon_orange
+
+  # Small chrome sphere on ground
+  - type: sphere
+    center: [1.0, 0.3, 1.5]
+    radius: 0.3
+    material: chrome
+
+lights:
+  - type: point
+    position: [5.0, 8.0, 5.0]
+    color: [1.0, 0.95, 0.9]
+    intensity: 1.0
+
+  - type: directional
+    direction: [-0.3, 0.8, 0.5]
+    color: [0.3, 0.4, 0.6]
+    intensity: 0.4
+
+camera:
+  lookfrom: [0.0, 3.0, 8.0]
+  lookat: [0.0, 0.8, 0.0]
+  vup: [0.0, 1.0, 0.0]
+  vfov: 35.0
+  image_width: 800

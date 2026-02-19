@@ -91,6 +91,7 @@ struct HitRecord {
     float3 normal;       // always faces against the ray
     bool   front_face;   // true if ray is outside the surface
     uint   material_index;
+    uint   shape_type;   // which primitive type was hit
 };
 
 // ---------------------------------------------------------------------------
@@ -459,6 +460,7 @@ bool intersect_scene(Ray ray,
 
             rec.t = t_hit;
             rec.material_index = shape.material_index;
+            rec.shape_type = shape.shape_type;
         }
     }
 
@@ -476,7 +478,7 @@ bool intersect_scene_bvh(Ray ray,
                          float t_min_val,
                          float t_max_val,
                          thread HitRecord& rec) {
-    uint stack[64];
+    uint stack[128];
     int stack_ptr = 0;
     stack[stack_ptr++] = 0;  // start at root node
 
@@ -540,11 +542,12 @@ bool intersect_scene_bvh(Ray ray,
 
                     rec.t = t_hit;
                     rec.material_index = shape.material_index;
+                    rec.shape_type = shape.shape_type;
                 }
             }
         } else {
             // Interior: push children (left = node_idx+1, right = node.offset)
-            if (stack_ptr < 63) {
+            if (stack_ptr + 1 < 128) {
                 stack[stack_ptr++] = node.offset;     // right child (far)
                 stack[stack_ptr++] = node_idx + 1;    // left child (near, process first)
             }
@@ -562,6 +565,8 @@ float3 compute_direct_lighting(HitRecord rec,
                                uint light_count,
                                constant uchar* shapes,
                                uint shape_count,
+                               constant uchar* materials,
+                               uint material_count,
                                constant uchar* bvh_nodes,
                                uint bvh_count) {
     float3 color = float3(0.0f);
@@ -585,7 +590,7 @@ float3 compute_direct_lighting(HitRecord rec,
             light_intensity = light.color * light.intensity;
         }
 
-        // Shadow ray
+        // Simple shadow test: any hit = in shadow (original behavior)
         float3 shadow_origin = rec.point + T_MIN * rec.normal;
         Ray shadow_ray;
         shadow_ray.origin = shadow_origin;
@@ -596,10 +601,10 @@ float3 compute_direct_lighting(HitRecord rec,
         if (bvh_count > 0) {
             in_shadow = intersect_scene_bvh(shadow_ray, bvh_nodes, bvh_count,
                                             shapes, shape_count,
-                                            T_MIN, light_dist - T_MIN, shadow_rec);
+                                            T_MIN, light_dist, shadow_rec);
         } else {
             in_shadow = intersect_scene(shadow_ray, shapes, shape_count,
-                                        T_MIN, light_dist - T_MIN, shadow_rec);
+                                        T_MIN, light_dist, shadow_rec);
         }
 
         if (!in_shadow) {
@@ -660,6 +665,7 @@ kernel void ray_trace_kernel(
 
         float3 throughput = float3(1.0f);
         float3 color = float3(0.0f);
+        bool debug_hit_jelly_triangle = false;
 
         for (uint bounce = 0; bounce < max_depth; ++bounce) {
             HitRecord rec;
@@ -709,7 +715,7 @@ kernel void ray_trace_kernel(
                 // Direct lighting
                 color += throughput * compute_direct_lighting(
                     rec, albedo, lights, light_count, shapes, shape_count,
-                    bvh_nodes, bvh_count);
+                    materials, material_count, bvh_nodes, bvh_count);
 
                 // Scatter: random direction on hemisphere (normal + random in unit sphere)
                 float3 scatter_dir = rec.normal + random_in_unit_sphere(rng_seed);
@@ -744,7 +750,7 @@ kernel void ray_trace_kernel(
                 // Direct lighting for metal
                 color += throughput * compute_direct_lighting(
                     rec, albedo, lights, light_count, shapes, shape_count,
-                    bvh_nodes, bvh_count);
+                    materials, material_count, bvh_nodes, bvh_count);
 
                 throughput *= albedo;
                 current_ray.origin = rec.point + T_MIN * rec.normal;
@@ -757,6 +763,28 @@ kernel void ray_trace_kernel(
                 float ior = param1;
                 float3 attenuation_color = tint;
 
+                // For indirect rays (bounce > 0), dielectric triangles are
+                // treated as an opaque shell: front-face hits reflect as
+                // diffuse pink (the jelly surface), back-face hits pass
+                // through invisibly (let rays escape the hollow mesh).
+                if (bounce > 0 && rec.shape_type == SHAPE_TRIANGLE) {
+                    if (rec.front_face) {
+                        // Outside hit: diffuse reflection from jelly surface
+                        float3 scatter_dir = rec.normal + random_in_unit_sphere(rng_seed);
+                        if (dot(scatter_dir, scatter_dir) < 1e-8f)
+                            scatter_dir = rec.normal;
+                        throughput *= attenuation_color;
+                        current_ray.origin = rec.point + T_MIN * rec.normal;
+                        current_ray.direction = normalize(scatter_dir);
+                    } else {
+                        // Inside hit: pass through invisibly to escape volume
+                        current_ray.origin = rec.point + T_MIN * current_ray.direction;
+                        --bounce;
+                    }
+                    continue;
+                }
+
+                // Full dielectric behavior for camera rays (bounce 0)
                 float eta = rec.front_face ? (1.0f / ior) : ior;
                 float3 unit_dir = normalize(current_ray.direction);
                 float cos_theta = min(dot(-unit_dir, rec.normal), 1.0f);

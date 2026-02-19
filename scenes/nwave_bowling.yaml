@@ -29,8 +29,12 @@ materials:
     albedo: [0.6, 0.2, 0.8]
   - name: ball_metal
     type: metal
-    albedo: [0.85, 0.25, 0.1]
-    fuzz: 0.05
+    albedo: [0.3, 0.3, 0.3]
+    fuzz: 0.02
+  - name: pink_jelly
+    type: dielectric
+    ior: 1.15
+    tint: [0.95, 0.5, 0.7]
 
 objects:
   # === Ground floor (hidden below chessboard, seamless physics collision) ===
@@ -105,7 +109,7 @@ objects:
   # === Bowling Ball ===
   - name: bowling_ball
     type: sphere
-    center: [-0.72, 0.3, 3.0]
+    center: [-2.85, 0.3, 2.7]
     radius: 0.3
     material: ball_metal
     physics:
@@ -113,7 +117,7 @@ objects:
       mass: 6.0
       friction: 0.3
       restitution: 0.2
-      initial_velocity: [0.0, 0.0, -5.0]
+      initial_velocity: [3.54, 0.0, -3.54]
 
   # === Letter 'n' (static) ===
   - { name: n_0, type: box, min: [-1.62, 0.48, 0.5], max: [-1.5, 0.6, 0.62], material: red_mat }
@@ -352,19 +356,153 @@ objects:
   - { name: v_7, type: box, min: [0.78, 0.12, 0.5], max: [0.9, 0.24, 0.62], material: orange_mat }
   - { name: v_8, type: box, min: [0.66, 0.0, 0.5], max: [0.78, 0.12, 0.62], material: orange_mat }
 
-  # === Letter 'e' (static) ===
-  - { name: e_0, type: box, min: [1.26, 0.48, 0.5], max: [1.38, 0.6, 0.62], material: purple_mat }
-  - { name: e_1, type: box, min: [1.38, 0.48, 0.5], max: [1.5, 0.6, 0.62], material: purple_mat }
-  - { name: e_2, type: box, min: [1.14, 0.36, 0.5], max: [1.26, 0.48, 0.62], material: purple_mat }
-  - { name: e_3, type: box, min: [1.5, 0.36, 0.5], max: [1.62, 0.48, 0.62], material: purple_mat }
-  - { name: e_4, type: box, min: [1.14, 0.24, 0.5], max: [1.26, 0.36, 0.62], material: purple_mat }
-  - { name: e_5, type: box, min: [1.26, 0.24, 0.5], max: [1.38, 0.36, 0.62], material: purple_mat }
-  - { name: e_6, type: box, min: [1.38, 0.24, 0.5], max: [1.5, 0.36, 0.62], material: purple_mat }
-  - { name: e_7, type: box, min: [1.5, 0.24, 0.5], max: [1.62, 0.36, 0.62], material: purple_mat }
-  - { name: e_8, type: box, min: [1.14, 0.12, 0.5], max: [1.26, 0.24, 0.62], material: purple_mat }
-  - { name: e_9, type: box, min: [1.26, 0.0, 0.5], max: [1.38, 0.12, 0.62], material: purple_mat }
-  - { name: e_10, type: box, min: [1.38, 0.0, 0.5], max: [1.5, 0.12, 0.62], material: purple_mat }
-  - { name: e_11, type: box, min: [1.5, 0.0, 0.5], max: [1.62, 0.12, 0.62], material: purple_mat }
+  # === Letter 'e' (dynamic, asleep until disturbed) ===
+  - name: e_0
+    type: box
+    min: [1.26, 0.48, 0.5]
+    max: [1.38, 0.6, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_1
+    type: box
+    min: [1.38, 0.48, 0.5]
+    max: [1.5, 0.6, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_2
+    type: box
+    min: [1.14, 0.36, 0.5]
+    max: [1.26, 0.48, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_3
+    type: box
+    min: [1.5, 0.36, 0.5]
+    max: [1.62, 0.48, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_4
+    type: box
+    min: [1.14, 0.24, 0.5]
+    max: [1.26, 0.36, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_5
+    type: box
+    min: [1.26, 0.24, 0.5]
+    max: [1.38, 0.36, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_6
+    type: box
+    min: [1.38, 0.24, 0.5]
+    max: [1.5, 0.36, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_7
+    type: box
+    min: [1.5, 0.24, 0.5]
+    max: [1.62, 0.36, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_8
+    type: box
+    min: [1.14, 0.12, 0.5]
+    max: [1.26, 0.24, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_9
+    type: box
+    min: [1.26, 0.0, 0.5]
+    max: [1.38, 0.12, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_10
+    type: box
+    min: [1.38, 0.0, 0.5]
+    max: [1.5, 0.12, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+  - name: e_11
+    type: box
+    min: [1.5, 0.0, 0.5]
+    max: [1.62, 0.12, 0.62]
+    material: purple_mat
+    physics:
+      body_type: dynamic
+      mass: 0.1
+      friction: 0.3
+      restitution: 0.4
+      start_asleep: true
+
+  # === Soft Body Jelly Cube (falls onto 'e') ===
+  - type: soft_body_cube
+    material: pink_jelly
+    position: [1.38, 3.0, 0.56]
+    grid_resolution: 5
+    grid_spacing: 0.12
+    pressure: 3000.0
+    restitution: 0.9
+    friction: 0.15
+    damping: 0.005
+    solver_iterations: 8
+    edge_compliance: 0.0005
+    volume_compliance: 0.0
 
 lights:
   - type: point
@@ -378,7 +516,7 @@ camera:
   vup: [0, 1, 0]
   vfov: 38
   aspect_ratio: 1.77777
-  image_width: 800
+  image_width: 1920
 
 animation:
   duration: 5.0

@@ -1,0 +1,312 @@
+project_id: soft-body-jelly-physics
+goal: >
+  Add soft body jelly physics with deformable mesh rendering.
+  A pink jelly cube falls from above, hits the 'e' letter of 'nWave',
+  makes it fall, and bounces back with wobbly soft-body physics.
+created: 2026-02-19
+revision: 2
+
+phases:
+  - id: "01"
+    name: "Domain Foundation"
+    description: "Domain types, PhysicsSimulator API, and DeformableMesh shape"
+
+    steps:
+      - id: "01-01"
+        title: "SoftBodyDesc and SoftBodyMeshData domain types"
+        user_story: US-01
+        description: >
+          Create SoftBodyDesc (soft body creation parameters) and SoftBodyMeshData
+          (per-frame deformed mesh data) as pure value types in the Domain ring.
+          Extend BodyType enum with SOFT. Handle SOFT case in ALL existing locations
+          that branch on BodyType:
+          - animation_renderer.cpp:is_movable_body() [line 61-63]
+          - jolt_physics_simulator.cpp:map_body_type_to_motion() [line 187-193]
+          - yaml_scene_loader.cpp:parse_body_type() [line 86-90]
+          Verify completeness with: rg "BodyType|body_type" across src/
+        files_to_create:
+          - src/domain/soft_body_desc.h
+          - src/domain/soft_body_mesh_data.h
+          - tests/domain/soft_body_types_test.cpp
+        files_to_modify:
+          - src/domain/physics_properties.h
+          - src/infrastructure/jolt_physics_simulator.cpp
+          - src/infrastructure/yaml_scene_loader.cpp
+          - src/application/animation_renderer.cpp
+        acceptance_criteria:
+          - "SoftBodyDesc has fields: grid_resolution(int), grid_spacing(double), position(Point3), pressure(double), restitution(double), friction(double), damping(double), solver_iterations(int), edge_compliance(double), volume_compliance(double)"
+          - "SoftBodyMeshData has fields: vertices(vector<Point3>), face_indices(vector<int>)"
+          - "BodyType enum has STATIC, DYNAMIC, KINEMATIC, SOFT values"
+          - "SoftBodyDesc default constructor initializes: grid_resolution=5, grid_spacing=0.5, pressure=2000.0, volume_compliance=0.0, edge_compliance=1e-4, restitution=0.3, friction=0.2, damping=0.1, solver_iterations=5. Test: SoftBodyDesc d; EXPECT_EQ(d.grid_resolution, 5);"
+          - "All 3 BodyType branch points handle SOFT: (1) is_movable_body returns false for SOFT, (2) map_body_type_to_motion returns Dynamic/LAYER_DYNAMIC for SOFT, (3) parse_body_type recognizes 'soft' string"
+          - "All existing tests pass unchanged"
+        depends_on: []
+
+      - id: "01-02"
+        title: "PhysicsSimulator soft body API extension"
+        user_story: US-02
+        description: >
+          Add three new pure virtual methods to PhysicsSimulator interface:
+          add_soft_body(const SoftBodyDesc&) -> int,
+          is_soft_body(int body_id) -> bool,
+          get_soft_body_mesh(int body_id) -> SoftBodyMeshData.
+          Provide stub implementations in JoltPhysicsSimulator that throw
+          std::runtime_error("not implemented"). Stubs do NOT require
+          separate soft body ID tracking yet (step 02-01 handles that).
+        files_to_modify:
+          - src/application/physics_simulator.h
+          - src/infrastructure/jolt_physics_simulator.h
+          - src/infrastructure/jolt_physics_simulator.cpp
+        files_to_create:
+          - tests/application/physics_simulator_soft_body_api_test.cpp
+        acceptance_criteria:
+          - "PhysicsSimulator has add_soft_body, is_soft_body, get_soft_body_mesh pure virtuals"
+          - "JoltPhysicsSimulator compiles with stub implementations that throw std::runtime_error('not implemented')"
+          - "Calling any stub method throws std::runtime_error"
+          - "Existing rigid body tests still pass unchanged"
+        depends_on: ["01-01"]
+
+      - id: "01-03"
+        title: "DeformableMesh shape with ray intersection"
+        user_story: US-05
+        description: >
+          Create DeformableMesh as a Shape subclass with Moller-Trumbore ray-triangle
+          intersection (same algorithm as TriangleMesh). Constructor takes face_indices
+          and material. Initial vertices set via update_vertices(). Computes per-vertex
+          smooth normals (area-weighted averages of adjacent face normals) and AABB on
+          vertex update. Linear face scan (no BVH). Barycentric interpolation of per-vertex
+          normals during intersection (same as TriangleMesh::hit_face).
+          Note: DeformableMesh is NOT registered in YAML scene loader here; that happens in step 04-01.
+        files_to_create:
+          - src/domain/shapes/deformable_mesh.h
+          - src/domain/shapes/deformable_mesh.cpp
+          - tests/domain/deformable_mesh_test.cpp
+        files_to_modify:
+          - src/CMakeLists.txt
+        acceptance_criteria:
+          - "DeformableMesh implements Shape::hit() with Moller-Trumbore intersection"
+          - "Ray hitting a triangle face returns correct t, point, and barycentric-interpolated smooth normal (tolerance: |expected - actual| < 1e-6)"
+          - "Ray missing all faces returns false"
+          - "bounding_box() returns tight AABB around current vertices"
+          - "update_vertices() replaces vertex positions and recomputes normals and AABB"
+          - "A 2-triangle quad (4 vertices, 2 faces) can be constructed and intersected correctly"
+        depends_on: []
+
+  - id: "02"
+    name: "Jolt Soft Body Integration"
+    description: "Validate Jolt XPBD API, then implement soft body creation and mesh extraction"
+
+    steps:
+      - id: "02-00"
+        title: "Spike: Validate Jolt XPBD soft body API availability"
+        user_story: "Risk mitigation for US-03, US-04"
+        description: >
+          Before implementing soft body creation, validate that Jolt v5.2.0 (as linked
+          in this project) exposes the required soft body API. Locate and verify the
+          following Jolt headers exist in build/_deps/joltphysics-src/:
+          - Jolt/Physics/SoftBody/SoftBodySharedSettings.h
+          - Jolt/Physics/SoftBody/SoftBodyCreationSettings.h
+          - Jolt/Physics/SoftBody/SoftBodyMotionProperties.h
+          Write a minimal compilation test that includes these headers and creates a
+          SoftBodySharedSettings object. Verify the API matches the expected pattern
+          from Jolt's SoftBodyCreator sample (3D vertex grid, edge/volume constraints).
+        files_to_create:
+          - tests/infrastructure/jolt_soft_body_api_spike_test.cpp
+        acceptance_criteria:
+          - "All 3 Jolt soft body headers exist and compile successfully"
+          - "SoftBodySharedSettings can be instantiated, vertices and faces added"
+          - "SoftBodyCreationSettings can be created from SoftBodySharedSettings"
+          - "If API unavailable: document findings and escalate (FAIL gate)"
+        depends_on: ["01-01", "01-02"]
+
+      - id: "02-01"
+        title: "JoltPhysicsSimulator soft body creation"
+        user_story: US-03
+        description: >
+          Implement add_soft_body() in JoltPhysicsSimulator using Jolt's XPBD soft body API.
+          Create a soft body cube: 3D vertex grid, axis-aligned edge constraints, tetrahedral
+          volume constraints, and surface faces on all 6 sides. Apply SoftBodyDesc parameters
+          (pressure, restitution, friction, damping, solver_iterations, edge/volume compliance).
+          Track soft body IDs in a separate vector (soft_body_ids) in the Impl struct.
+          Required Jolt headers:
+          - Jolt/Physics/SoftBody/SoftBodySharedSettings.h
+          - Jolt/Physics/SoftBody/SoftBodyCreationSettings.h
+          - Jolt/Physics/SoftBody/SoftBodyMotionProperties.h
+        files_to_modify:
+          - src/infrastructure/jolt_physics_simulator.cpp
+          - src/infrastructure/jolt_physics_simulator.h
+        files_to_create:
+          - tests/infrastructure/jolt_soft_body_creation_test.cpp
+        acceptance_criteria:
+          - "add_soft_body() creates a Jolt soft body with the specified grid resolution"
+          - "A 5x5x5 soft body cube has 125 vertices"
+          - "Soft body is placed at the specified position"
+          - "Pressure, restitution, friction, damping are applied from SoftBodyDesc"
+          - "is_soft_body() returns true for soft body IDs, false for rigid body IDs"
+          - "Soft body falls under gravity when physics is stepped (position changes after 10 steps)"
+        depends_on: ["02-00"]
+
+      - id: "02-02"
+        title: "JoltPhysicsSimulator soft body mesh extraction"
+        user_story: US-04
+        description: >
+          Implement get_soft_body_mesh() to extract deformed vertex positions from
+          SoftBodyMotionProperties::GetVertices() each frame. Transform vertices to
+          world space via body.GetCenterOfMassTransform(). Extract face indices from
+          SoftBodyMotionProperties::GetFaces(). Return SoftBodyMeshData.
+        files_to_modify:
+          - src/infrastructure/jolt_physics_simulator.cpp
+        files_to_create:
+          - tests/infrastructure/jolt_soft_body_mesh_extraction_test.cpp
+        acceptance_criteria:
+          - "get_soft_body_mesh() returns vertices for a 5x5x5 cube (count > 0)"
+          - "Vertices are in world space (transformed by body center of mass)"
+          - "Face indices form valid triangles (3 indices per face, all in vertex range)"
+          - "After 10 physics steps with gravity, vertex positions differ from initial"
+          - "Face indices are consistent across physics steps (topology doesn't change)"
+        depends_on: ["02-01"]
+
+  - id: "03"
+    name: "Rendering Pipeline Integration"
+    description: "Connect DeformableMesh to AnimationRenderer for per-frame soft body rendering"
+
+    steps:
+      - id: "03-01"
+        title: "DeformableMesh vertex update with smooth normals"
+        user_story: US-06
+        description: >
+          Ensure DeformableMesh::update_vertices() recomputes area-weighted smooth
+          normals and AABB correctly when called with new vertex positions. Test that
+          after updating vertices, ray intersection uses the new geometry.
+        files_to_modify:
+          - src/domain/shapes/deformable_mesh.cpp
+        files_to_create:
+          - tests/domain/deformable_mesh_update_test.cpp
+        acceptance_criteria:
+          - "After update_vertices(), hit() intersects against new positions (not old ones)"
+          - "Smooth normals are area-weighted averages of adjacent face normals (tolerance < 1e-6)"
+          - "AABB is tight around new vertex positions after update"
+          - "Updating a flat quad to a V-shape changes the intersection point and normal"
+          - "Normals point outward (dot with face winding direction > 0) after update"
+        depends_on: ["01-03"]
+
+      - id: "03-02"
+        title: "AnimationRenderer soft body loop integration"
+        user_story: US-07
+        description: >
+          Extend AnimationRenderer to handle soft bodies alongside rigid bodies.
+          Accept a vector of SoftBodyDesc in constructor alongside shape_physics.
+          During setup: call physics_->add_soft_body() for each soft body desc,
+          create a DeformableMesh for each, add to the animation scene.
+          Per frame: call get_soft_body_mesh() and update_vertices() for each soft body.
+          Rigid body path remains unchanged. Frame 0 is rendered BEFORE first physics
+          step (matching existing render-first-then-step pattern in animation_renderer.cpp).
+        files_to_modify:
+          - src/application/animation_renderer.h
+          - src/application/animation_renderer.cpp
+        files_to_create:
+          - tests/application/animation_renderer_soft_body_test.cpp
+        acceptance_criteria:
+          - "AnimationRenderer constructor accepts optional vector of SoftBodyDesc"
+          - "Soft bodies are registered with physics simulator during setup"
+          - "DeformableMesh vertices are updated each frame from physics mesh extraction"
+          - "Rigid body rendering path is unaffected (existing AnimationRenderer tests pass)"
+          - "Mixed scene with rigid + soft bodies renders all objects"
+          - "Frame 0 is rendered before first physics step (soft body at initial position)"
+        depends_on: ["02-02", "03-01"]
+
+  - id: "04"
+    name: "YAML Scene Support"
+    description: "Parse soft body cube from YAML scene files"
+
+    steps:
+      - id: "04-01"
+        title: "YAML parsing for soft_body_cube object type"
+        user_story: US-08
+        description: >
+          Extend YamlSceneLoader to parse objects with type: soft_body_cube.
+          Parse all SoftBodyDesc fields from the YAML node. Extend SceneLoadResult
+          to carry a vector of SoftBodyDesc alongside shape_physics. Wire through
+          to main.cpp so --physics-animate uses the soft body descriptions.
+        files_to_modify:
+          - src/infrastructure/yaml_scene_loader.h
+          - src/infrastructure/yaml_scene_loader.cpp
+          - src/main.cpp
+        files_to_create:
+          - tests/infrastructure/yaml_soft_body_parsing_test.cpp
+        acceptance_criteria:
+          - "YAML with type: soft_body_cube is parsed into SoftBodyDesc"
+          - "All SoftBodyDesc fields have correct defaults when omitted from YAML"
+          - "Position and material are extracted from YAML node"
+          - "SceneLoadResult carries soft_body_descs vector"
+          - "Existing scene files (simple.yaml, nwave_bowling.yaml, gpu_showcase.yaml) parse without error"
+        depends_on: ["03-02"]
+
+  - id: "05"
+    name: "Letter Shape and Demo Scene"
+    description: "Create 'e' letter as a compound box shape and build the demo scene"
+
+    steps:
+      - id: "05-01"
+        title: "Letter 'e' as compound box shape"
+        user_story: "US-09, US-10, US-11 (simplified — US-12 scene validation deferred)"
+        description: >
+          Construct the 'e' letter from a compound of boxes, similar to how nwave_bowling.yaml
+          constructs letters. Create a helper function that returns a vector of Box shapes
+          forming an 'e'. For physics, each box is a separate dynamic rigid body with
+          start_asleep=true. This avoids introducing ttf2mesh/V-HACD dependencies.
+        files_to_create:
+          - src/domain/shapes/letter_shapes.h
+          - src/domain/shapes/letter_shapes.cpp
+          - tests/domain/letter_shapes_test.cpp
+        files_to_modify:
+          - src/CMakeLists.txt
+        acceptance_criteria:
+          - "create_letter_e() returns a vector of Box shapes with correct min/max coordinates"
+          - "The 'e' is approximately 2 units tall and 1.5 units wide"
+          - "At least 5 boxes: vertical stroke, top bar, middle bar, bottom bar, lower curve"
+          - "Each box has width > 0, height > 0, depth > 0"
+          - "create_letter_e_physics() returns matching PhysicsProperties (dynamic, start_asleep=true, mass=2.0)"
+        depends_on: []
+
+      - id: "05-02"
+        title: "Demo scene: pink jelly cube hits 'e' letter"
+        user_story: US-13
+        description: >
+          Create scenes/jelly_cube_demo.yaml with: ground plane (static), pink jelly
+          cube (soft_body_cube, starts above 'e'), 'e' letter boxes (dynamic, start_asleep),
+          point light, camera positioned to see the action. Also create an integration test
+          that loads the scene and runs a short animation to verify end-to-end.
+        files_to_create:
+          - scenes/jelly_cube_demo.yaml
+          - tests/integration/jelly_demo_integration_test.cpp
+        files_to_modify:
+          - src/infrastructure/yaml_scene_loader.cpp
+        acceptance_criteria:
+          - "Scene file loads without errors"
+          - "Animation produces at least 60 frames without crashes"
+          - "Frame 0 shows undisturbed scene (cube above, 'e' standing)"
+          - "No NaN pixels in any frame (all channels in [0, 1])"
+          - "Jelly cube uses Lambertian material with albedo=[0.9, 0.4, 0.6]"
+          - "At least one frame shows 'e' boxes displaced from original position"
+          - "At least one frame shows soft body vertices differ from initial grid positions"
+        depends_on: ["04-01", "05-01"]
+
+validation:
+  status: pending
+  reviewer: null
+  date: null
+  revision_notes: >
+    Revision 2 addresses all defects from initial review:
+    D1 (BLOCKER): Enumerated all 3 BodyType branch points with file:line references. Added yaml_scene_loader.cpp to files_to_modify.
+    D12 (BLOCKER): Added step 02-00 spike to validate Jolt XPBD API before implementation.
+    D2: Clarified stub behavior (no separate tracking in stubs).
+    D3: Made default values explicit with test assertion example.
+    D4: Specified area-weighted normals with barycentric interpolation and tolerance.
+    D5: Added note that DeformableMesh registration is in step 04-01.
+    D6: Enumerated required Jolt soft body headers.
+    D7: Made box verification programmatic (count, dimensions).
+    D8: Addressed via step 02-00.
+    D9: Clarified frame 0 render-before-step pattern.
+    D10: Removed tilde, made albedo exact.
+    D11: Added note that US-12 is deferred.

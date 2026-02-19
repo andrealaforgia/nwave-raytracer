@@ -16,6 +16,8 @@ add_library(nwave_domain
     domain/shapes/box.cpp
     domain/shapes/cylinder.cpp
     domain/shapes/transformed_shape.cpp
+    domain/shapes/deformable_mesh.cpp
+    domain/shapes/letter_shapes.cpp
     domain/materials/lambertian.cpp
     domain/materials/metal.cpp
     domain/materials/dielectric.cpp

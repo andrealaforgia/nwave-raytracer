@@ -18,20 +18,31 @@ add_executable(nwave_tests
     domain/camera_test.cpp
     domain/animation_config_test.cpp
     domain/physics_properties_test.cpp
+    domain/soft_body_types_test.cpp
     application/renderer_test.cpp
     application/sampling_test.cpp
     infrastructure/ppm_writer_test.cpp
     infrastructure/yaml_scene_loader_test.cpp
     infrastructure/cli_dispatcher_test.cpp
     domain/transformed_shape_test.cpp
+    domain/deformable_mesh_test.cpp
+    domain/deformable_mesh_update_test.cpp
+    domain/letter_shapes_test.cpp
     infrastructure/validator_test.cpp
     infrastructure/jolt_physics_simulator_test.cpp
+    infrastructure/jolt_soft_body_api_spike_test.cpp
+    infrastructure/jolt_soft_body_creation_test.cpp
+    infrastructure/jolt_soft_body_mesh_extraction_test.cpp
     application/animation_renderer_test.cpp
     application/render_backend_test.cpp
     application/cpu_render_backend_test.cpp
     infrastructure/progress_reporter_test.cpp
     infrastructure/gpu/scene_flattener_test.cpp
     infrastructure/gpu/bvh_flattener_test.cpp
+    application/physics_simulator_soft_body_api_test.cpp
+    application/animation_renderer_soft_body_test.cpp
+    infrastructure/yaml_soft_body_parsing_test.cpp
+    integration/jelly_demo_integration_test.cpp
 )
 
 target_link_libraries(nwave_tests

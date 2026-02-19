@@ -17,6 +17,10 @@ public:
     int image_width() const { return image_width_; }
     int image_height() const { return image_height_; }
     const Point3& lookfrom() const { return lookfrom_; }
+    const Point3& lookat() const { return lookat_; }
+    const Vec3& vup() const { return vup_; }
+    double vfov() const { return vfov_; }
+    double aspect_ratio() const { return aspect_ratio_; }
     const Point3& pixel00_loc() const { return pixel00_loc_; }
     const Vec3& pixel_delta_u() const { return pixel_delta_u_; }
     const Vec3& pixel_delta_v() const { return pixel_delta_v_; }

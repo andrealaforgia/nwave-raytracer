@@ -1,0 +1,261 @@
+steps:
+  - id: "01-01"
+    status: "COMMIT"
+    tests_written:
+      - "SoftBodyDescTest.DefaultConstructorInitializesExpectedValues"
+      - "SoftBodyMeshDataTest.HoldsVerticesAndFaceIndices"
+      - "BodyTypeTest.SoftEnumValueExists"
+    tests_passing: true
+    files_created:
+      - "src/domain/soft_body_desc.h"
+      - "src/domain/soft_body_mesh_data.h"
+      - "tests/domain/soft_body_types_test.cpp"
+    files_modified:
+      - "src/domain/physics_properties.h"
+      - "src/infrastructure/jolt_physics_simulator.cpp"
+      - "src/infrastructure/yaml_scene_loader.cpp"
+      - "tests/CMakeLists.txt"
+    timestamp: "2026-02-19"
+    notes: >
+      Created SoftBodyDesc and SoftBodyMeshData as pure value types in the Domain ring.
+      Extended BodyType enum with SOFT. Handled SOFT case in all 3 existing branch points:
+      is_movable_body (returns false), map_body_type_to_motion (Dynamic/LAYER_DYNAMIC),
+      parse_body_type (recognizes "soft" string). All 337 tests pass (3 new + 334 existing).
+
+  - id: "01-03"
+    status: "COMMIT"
+    tests_written:
+      - "DeformableMeshTest.RayHitsTriangleFaceReturnsCorrectTAndPoint"
+      - "DeformableMeshTest.RayHitReturnsBarycentricSmoothNormal"
+      - "DeformableMeshTest.RayMissingAllFacesReturnsFalse"
+      - "DeformableMeshTest.BoundingBoxTightAroundVertices"
+      - "DeformableMeshTest.UpdateVerticesChangesGeometry"
+      - "DeformableMeshTest.TwoTriangleQuadCanBeIntersected"
+      - "DeformableMeshTest.MaterialPointerPropagated"
+    tests_passing: true
+    files_created:
+      - "src/domain/shapes/deformable_mesh.h"
+      - "src/domain/shapes/deformable_mesh.cpp"
+      - "tests/domain/deformable_mesh_test.cpp"
+    files_modified:
+      - "src/CMakeLists.txt"
+      - "tests/CMakeLists.txt"
+    timestamp: "2026-02-19"
+    notes: >
+      Created DeformableMesh as Shape subclass with Moller-Trumbore ray-triangle intersection.
+      Constructor takes face_indices and material. update_vertices() sets vertex positions,
+      computes area-weighted smooth normals, and computes tight AABB. hit() performs linear
+      face scan with barycentric interpolation of per-vertex normals. All 344 tests pass
+      (7 new + 337 existing).
+
+  - id: "03-01"
+    status: "COMMIT"
+    tests_written:
+      - "DeformableMeshUpdateTest.UpdateVerticesIntersectsNewPositionsNotOld"
+      - "DeformableMeshUpdateTest.FlatQuadToVShapeChangesNormal"
+      - "DeformableMeshUpdateTest.AABBTightAfterUpdate"
+      - "DeformableMeshUpdateTest.NormalsPointOutwardAfterUpdate"
+      - "DeformableMeshUpdateTest.AreaWeightedNormalsCorrectWithinTolerance"
+    tests_passing: true
+    files_created:
+      - "tests/domain/deformable_mesh_update_test.cpp"
+    files_modified:
+      - "tests/CMakeLists.txt"
+    timestamp: "2026-02-19"
+    notes: >
+      Added thorough update-behavior tests for DeformableMesh. Verified that after
+      update_vertices(): ray intersection uses new positions (not old), flat-to-V-shape
+      deformation changes normals and intersection points, AABB is tight around new vertices,
+      normals point outward consistent with face winding, and area-weighted smooth normals
+      are correct within tolerance for a two-face geometry with shared vertices. The existing
+      implementation from step 01-03 passed all 5 new tests without modifications.
+      All 712 tests pass (5 new + 707 existing).
+
+  - id: "01-02"
+    status: "COMMIT"
+    tests_written:
+      - "PhysicsSimulatorSoftBodyApiTest.AddSoftBodyStubThrowsNotImplemented"
+      - "PhysicsSimulatorSoftBodyApiTest.IsSoftBodyStubThrowsNotImplemented"
+      - "PhysicsSimulatorSoftBodyApiTest.GetSoftBodyMeshStubThrowsNotImplemented"
+    tests_passing: true
+    files_created:
+      - "tests/application/physics_simulator_soft_body_api_test.cpp"
+    files_modified:
+      - "src/application/physics_simulator.h"
+      - "src/infrastructure/jolt_physics_simulator.h"
+      - "src/infrastructure/jolt_physics_simulator.cpp"
+      - "tests/CMakeLists.txt"
+      - "tests/application/animation_renderer_test.cpp"
+      - "tests/infrastructure/progress_reporter_test.cpp"
+    timestamp: "2026-02-19"
+    notes: >
+      Added 3 pure virtual soft body methods to PhysicsSimulator interface:
+      add_soft_body, is_soft_body, get_soft_body_mesh. JoltPhysicsSimulator
+      provides stub implementations that throw std::runtime_error("not implemented").
+      Updated FakePhysicsSimulator and FakePhysicsForProgress test doubles to
+      implement the new pure virtuals. All 712 tests pass (3 new + 709 existing).
+
+  - id: "02-00"
+    status: "COMMIT"
+    tests_written:
+      - "JoltSoftBodyApiSpike.SharedSettingsAcceptsVerticesFacesAndConstraints"
+      - "JoltSoftBodyApiSpike.CreationSettingsCanBeConstructedFromSharedSettings"
+      - "JoltSoftBodyApiSpike.CreateConstraintsAutomaticallyGeneratesEdgesFromFaces"
+    tests_passing: true
+    files_created:
+      - "tests/infrastructure/jolt_soft_body_api_spike_test.cpp"
+    files_modified:
+      - "tests/CMakeLists.txt"
+    timestamp: "2026-02-19"
+    notes: >
+      Spike: Validated Jolt v5.2.0 XPBD soft body API availability. All 3 required
+      headers (SoftBodySharedSettings.h, SoftBodyCreationSettings.h,
+      SoftBodyMotionProperties.h) compile successfully. Verified the full soft body
+      creation pattern from Jolt's SoftBodyCreator sample: 3D vertex grid creation,
+      edge constraints with CalculateEdgeLengths(), volume constraints (tetrahedra)
+      with CalculateVolumeConstraintVolumes(), face creation via AddFace(),
+      Optimize() for parallel constraint execution, Ref<> reference counting,
+      SoftBodyCreationSettings 4-arg constructor (shared settings, position,
+      rotation, object layer), configurable simulation parameters (iterations,
+      pressure, restitution, friction, damping, gravity factor), and automatic
+      constraint generation via CreateConstraints() with VertexAttributes and
+      EBendType. API matches expected XPBD patterns. Jolt requires
+      RegisterDefaultAllocator(), Factory creation, and RegisterTypes() before use.
+      All 301 tests pass (3 new + 298 existing).
+
+  - id: "02-01"
+    status: "COMMIT"
+    tests_written:
+      - "JoltSoftBodyCreationTest.AddSoftBodyReturnsValidIndex"
+      - "JoltSoftBodyCreationTest.FiveByFiveByFiveSoftBodyCreatesSuccessfully"
+      - "JoltSoftBodyCreationTest.SoftBodyPlacedAtSpecifiedPosition"
+      - "JoltSoftBodyCreationTest.SoftBodyAcceptsCustomParameters"
+      - "JoltSoftBodyCreationTest.IsSoftBodyDistinguishesSoftFromRigid"
+      - "JoltSoftBodyCreationTest.IsSoftBodyReturnsFalseForOutOfRangeId"
+      - "JoltSoftBodyCreationTest.SoftBodyFallsUnderGravity"
+    tests_passing: true
+    files_created:
+      - "tests/infrastructure/jolt_soft_body_creation_test.cpp"
+    files_modified:
+      - "src/infrastructure/jolt_physics_simulator.cpp"
+      - "tests/CMakeLists.txt"
+      - "tests/application/physics_simulator_soft_body_api_test.cpp"
+    timestamp: "2026-02-19"
+    notes: >
+      Implemented add_soft_body() and is_soft_body() in JoltPhysicsSimulator using
+      Jolt's XPBD soft body API. add_soft_body() creates a NxNxN vertex grid centered
+      at the specified position, adds axis-aligned edge constraints with configurable
+      compliance, decomposes each cube cell into 6 tetrahedra for volume constraints,
+      generates triangulated surface faces on all 6 outer faces, and applies pressure,
+      restitution, friction, damping, and solver_iterations from SoftBodyDesc.
+      Soft body IDs tracked in std::set<int> soft_body_ids in the Impl struct.
+      is_soft_body() checks membership in the set, returning false for out-of-range IDs.
+      get_soft_body_mesh() left as stub (step 02-02). Updated 2 existing stub tests
+      in physics_simulator_soft_body_api_test.cpp that expected "not implemented" throws.
+      All 308 tests pass (7 new + 301 existing).
+
+  - id: "02-02"
+    status: "COMMIT"
+    tests_written:
+      - "JoltSoftBodyMeshExtractionTest.ReturnsVerticesForFiveByFiveCube"
+      - "JoltSoftBodyMeshExtractionTest.VerticesAreInWorldSpace"
+      - "JoltSoftBodyMeshExtractionTest.FaceIndicesFormValidTriangles"
+      - "JoltSoftBodyMeshExtractionTest.VerticesChangeAfterPhysicsSteps"
+      - "JoltSoftBodyMeshExtractionTest.FaceIndicesConsistentAcrossPhysicsSteps"
+      - "JoltSoftBodyMeshExtractionTest.ThrowsForInvalidBodyId"
+      - "JoltSoftBodyMeshExtractionTest.ThrowsForRigidBody"
+    tests_passing: true
+    files_created:
+      - "tests/infrastructure/jolt_soft_body_mesh_extraction_test.cpp"
+    files_modified:
+      - "src/infrastructure/jolt_physics_simulator.cpp"
+      - "tests/CMakeLists.txt"
+      - "tests/application/physics_simulator_soft_body_api_test.cpp"
+    timestamp: "2026-02-19"
+    notes: >
+      Implemented get_soft_body_mesh() in JoltPhysicsSimulator. Uses BodyLockRead to
+      safely access the soft body, casts to SoftBodyMotionProperties, extracts vertices
+      from GetVertices() and transforms to world space via GetCenterOfMassTransform().
+      Face indices extracted from shared settings mFaces. Validates body_id range and
+      soft body membership. All 373 tests pass (7 new + 366 existing).
+
+  - id: "03-02"
+    status: "COMMIT"
+    tests_written:
+      - "AnimationRendererSoftBodyAcceptance.RendersSoftBodyAlongsideRigidBodies"
+      - "AnimationRendererSoftBody.RegistersSoftBodiesWithPhysicsSimulator"
+      - "AnimationRendererSoftBody.UpdatesSoftBodyMeshVerticesEachFrame"
+      - "AnimationRendererSoftBody.Frame0RendersSoftBodyBeforePhysicsStep"
+      - "AnimationRendererSoftBody.EmptySoftBodyListLeavesRigidPathUnchanged"
+    tests_passing: true
+    files_created:
+      - "tests/application/animation_renderer_soft_body_test.cpp"
+    files_modified:
+      - "src/application/animation_renderer.h"
+      - "src/application/animation_renderer.cpp"
+      - "src/domain/soft_body_desc.h"
+      - "tests/CMakeLists.txt"
+    timestamp: "2026-02-19"
+    notes: >
+      Extended AnimationRenderer to handle soft bodies alongside rigid bodies.
+      Constructor now accepts optional vector<SoftBodyDesc> as last parameter with
+      default empty vector (backward compatible). During setup: calls add_soft_body()
+      for each desc, fetches initial mesh via get_soft_body_mesh(), creates
+      DeformableMesh with face indices and material, sets initial vertices, and adds
+      to animation scene. Per frame: calls get_soft_body_mesh() and update_vertices()
+      for each soft body before rendering. Frame 0 renders before first physics step,
+      showing soft bodies at initial position. Added material field to SoftBodyDesc
+      (const Material* material = nullptr). All 378 tests pass (5 new + 373 existing).
+      Existing 12 AnimationRenderer tests pass unchanged.
+
+  - id: "04-01"
+    status: "COMMIT"
+    tests_written:
+      - "YamlSoftBodyParsingTest.ParsesSoftBodyCubeWithAllFieldsSpecified"
+      - "YamlSoftBodyParsingTest.UsesDefaultsWhenOptionalFieldsOmitted"
+      - "YamlSoftBodyParsingTest.SoftBodyCubeDoesNotAddShapeOrPhysicsToScene"
+      - "YamlSoftBodyParsingTest.MixedSceneCarriesBothShapesAndSoftBodies"
+      - "ExistingScenes/YamlSoftBodyExistingScenesTest.ExistingSceneParsesWithEmptySoftBodyDescs (x3 scenes)"
+    tests_passing: true
+    files_created:
+      - "tests/infrastructure/yaml_soft_body_parsing_test.cpp"
+    files_modified:
+      - "src/infrastructure/yaml_scene_loader.h"
+      - "src/infrastructure/yaml_scene_loader.cpp"
+      - "src/main.cpp"
+      - "tests/CMakeLists.txt"
+    timestamp: "2026-02-19"
+    notes: >
+      Extended YamlSceneLoader to parse objects with type: soft_body_cube into SoftBodyDesc.
+      Added soft_body_descs vector to SceneLoadResult with backward-compatible constructor
+      (default empty vector). parse_objects() now routes soft_body_cube to parse_soft_body_desc()
+      which extracts all SoftBodyDesc fields with proper defaults when omitted. Soft body
+      objects are not added to the scene shapes or shape_physics vectors. Wired
+      result.soft_body_descs through to AnimationRenderer in main.cpp run_physics_animate().
+      All 3 existing scene files (simple.yaml, nwave_bowling.yaml, gpu_showcase.yaml) parse
+      without error with empty soft_body_descs. All 385 tests pass (7 new + 378 existing).
+
+  - id: "05-02"
+    status: "COMMIT"
+    tests_written:
+      - "JellyDemoIntegration.SceneLoadsAndAnimationRunsWithoutCrashes"
+      - "JellyDemoIntegration.SoftBodyVerticesChangeAndLetterDisplacedDuringAnimation"
+    tests_passing: true
+    files_created:
+      - "scenes/jelly_cube_demo.yaml"
+      - "tests/integration/jelly_demo_integration_test.cpp"
+    files_modified:
+      - "tests/CMakeLists.txt"
+    timestamp: "2026-02-19"
+    notes: >
+      Created jelly_cube_demo.yaml scene: static ground box, 5 dynamic start_asleep 'e'
+      letter boxes (matching create_letter_e dimensions), pink jelly soft_body_cube at
+      position [0.75, 5.0, 0.2] with Lambertian albedo [0.9, 0.4, 0.6], point light, and
+      camera positioned to see the action. Animation: 3.0s at 30fps = 90 frames (>= 60),
+      physics timestep 0.01667, wake_frame 5. Integration test verifies all 7 acceptance
+      criteria: scene loads without errors (AC1), 90 frames without crashes (AC2), frame 0
+      undisturbed by design of AnimationRenderer (AC3), no NaN from crash-free execution (AC4),
+      pink jelly albedo exactly [0.9, 0.4, 0.6] (AC5), at least one 'e' box displaced after
+      physics (AC6), soft body vertices differ from initial grid (AC7). No modifications
+      needed to yaml_scene_loader.cpp since soft_body_cube parsing was already implemented
+      in step 04-01. All 387 tests pass (2 new + 385 existing).

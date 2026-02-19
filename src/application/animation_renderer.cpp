@@ -1,12 +1,15 @@
 #include "application/animation_renderer.h"
 #include "domain/shapes/transformed_shape.h"
+#include "domain/shapes/deformable_mesh.h"
 #include "domain/shapes/sphere.h"
 #include "domain/shapes/box.h"
 #include "domain/shapes/plane.h"
 #include "domain/shapes/cylinder.h"
+#include "domain/soft_body_mesh_data.h"
 #include "core/matrix4x4.h"
 #include <iomanip>
 #include <sstream>
+#include <cmath>
 
 namespace nwave {
 
@@ -70,14 +73,16 @@ AnimationRenderer::AnimationRenderer(const AnimationConfig& config,
                                      std::unique_ptr<PhysicsSimulator> physics,
                                      const Camera& camera,
                                      WriteCallback write_callback,
-                                     ProgressReporter* progress)
+                                     ProgressReporter* progress,
+                                     std::vector<SoftBodyDesc> soft_body_descs)
     : config_(config)
     , scene_(scene)
     , shape_physics_(shape_physics)
     , physics_(std::move(physics))
     , camera_(camera)
     , write_callback_(std::move(write_callback))
-    , progress_(progress) {}
+    , progress_(progress)
+    , soft_body_descs_(std::move(soft_body_descs)) {}
 
 int AnimationRenderer::render() {
     const auto& original_shapes = scene_.shapes();
@@ -117,6 +122,22 @@ int AnimationRenderer::render() {
         }
     }
 
+    // Setup soft bodies
+    std::vector<std::shared_ptr<DeformableMesh>> soft_meshes;
+    std::vector<int> soft_body_ids;
+    for (const auto& sb_desc : soft_body_descs_) {
+        int sb_id = physics_->add_soft_body(sb_desc);
+        soft_body_ids.push_back(sb_id);
+
+        SoftBodyMeshData initial_mesh = physics_->get_soft_body_mesh(sb_id);
+
+        auto mesh = std::make_shared<DeformableMesh>(
+            initial_mesh.face_indices, sb_desc.material);
+        mesh->update_vertices(initial_mesh.vertices);
+
+        soft_meshes.push_back(mesh);
+    }
+
     // Build the animation scene: replace dynamic shapes with their TransformedShape wrappers
     Scene anim_scene;
     for (int i = 0; i < shape_count; ++i) {
@@ -125,6 +146,11 @@ int AnimationRenderer::render() {
         } else {
             anim_scene.add_shape(original_shapes[i]);
         }
+    }
+
+    // Add soft body meshes to the scene
+    for (const auto& mesh : soft_meshes) {
+        anim_scene.add_shape(mesh);
     }
 
     // Copy lights from original scene
@@ -154,9 +180,34 @@ int AnimationRenderer::render() {
             }
         }
 
+        // Update soft body meshes from physics
+        for (size_t soft_idx = 0; soft_idx < soft_meshes.size(); ++soft_idx) {
+            SoftBodyMeshData mesh_data = physics_->get_soft_body_mesh(soft_body_ids[soft_idx]);
+            soft_meshes[soft_idx]->update_vertices(std::move(mesh_data.vertices));
+        }
+
+        // Animate camera: slow counterclockwise rotation + lower over duration
+        double t = (total_frames > 1) ? static_cast<double>(frame) / (total_frames - 1) : 0.0;
+        Point3 base_from = camera_.lookfrom();
+        Point3 target = camera_.lookat();
+        double dx = base_from.x() - target.x();
+        double dz = base_from.z() - target.z();
+        double radius = std::sqrt(dx * dx + dz * dz);
+        double base_angle = std::atan2(dx, dz);
+        double rotation_amount = M_PI / 3.0;  // 60 degrees counterclockwise
+        double height_drop = 0.8;
+        double angle = base_angle + t * rotation_amount;
+        Point3 new_from(
+            target.x() + radius * std::sin(angle),
+            base_from.y() - t * height_drop,
+            target.z() + radius * std::cos(angle));
+        Camera frame_camera(new_from, target, camera_.vup(),
+                            camera_.vfov(), camera_.aspect_ratio(),
+                            camera_.image_width());
+
         // Render frame
         std::string filename = frame_filename(config_.output_directory, frame);
-        write_callback_(filename, anim_scene, camera_, camera_.image_width(), 1);
+        write_callback_(filename, anim_scene, frame_camera, frame_camera.image_width(), 1);
 
         if (progress_) {
             progress_->frame_complete(frame + 1);

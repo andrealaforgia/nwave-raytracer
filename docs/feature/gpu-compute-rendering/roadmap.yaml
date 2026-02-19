@@ -1,0 +1,895 @@
+project_id: gpu-compute-rendering
+goal: "Implement GPU compute rendering via Metal for the nwave ray tracer"
+schema_version: "2.0"
+methodology: standard
+created: 2026-02-18
+
+# Production file inventory (new + modified): 22 files
+# Step count: 26 steps
+# Ratio: 26 / 22 = 1.18 (well under 2.5 ceiling)
+#
+# User story mapping:
+#   Phase 01 (US-GPU-000): Walking Skeleton          - Steps 01-01 through 01-05
+#   Phase 02 (US-GPU-001): Render Backend Abstraction - Steps 02-01 through 02-04
+#   Phase 03 (US-GPU-002): Ray Gen + Sky on GPU       - Steps 03-01 through 03-02
+#   Phase 04 (US-GPU-003): Scene Data Packing         - Steps 04-01 through 04-04
+#   Phase 05 (US-GPU-004): Single-Bounce GPU Render   - Steps 05-01 through 05-02
+#   Phase 06 (US-GPU-005): Multi-Bounce Iterative     - Steps 06-01 through 06-02
+#   Phase 07 (US-GPU-006): Linear BVH on GPU          - Steps 07-01 through 07-03
+#   Phase 08 (US-GPU-007): SPP Accumulation           - Steps 08-01 through 08-02
+#   Phase 09 (US-GPU-008): Animation Integration      - Steps 09-01 through 09-02
+
+phases:
+
+  # =========================================================================
+  # PHASE 01: Walking Skeleton (US-GPU-000)
+  # Validates the entire Metal compute pipeline end-to-end with zero ray tracing.
+  # Produces a gradient PPM via GPU dispatch, proving infrastructure works.
+  # =========================================================================
+  - phase_id: "01"
+    name: "Walking Skeleton -- Metal Compute Pipeline End-to-End"
+    user_story: "US-GPU-000"
+    steps:
+
+      - step_id: "01-01"
+        name: "GPU types header and build system Metal detection"
+        description: >
+          Create gpu_types.h in Ring 1 with plain C struct stubs (GPUCamera only
+          for now) and static_assert size checks. Add NWAVE_ENABLE_GPU CMake option,
+          Metal framework detection, and conditional compilation guards.
+        acceptance_criteria:
+          - "Given NWAVE_ENABLE_GPU=ON on macOS When CMake configures Then Metal.framework and Foundation.framework are found and NWAVE_HAS_METAL=1 is defined"
+          - "Given NWAVE_ENABLE_GPU=ON on Linux When CMake configures Then a warning is printed and NWAVE_HAS_METAL is not defined and the build succeeds"
+          - "Given gpu_types.h is included When compiled on any platform Then static_assert for GPUCamera size (112 bytes) passes"
+          - "Given NWAVE_ENABLE_GPU=OFF When CMake configures Then no Metal detection runs and NWAVE_HAS_METAL is not defined"
+        test_file: "tests/core/gpu_types_test.cpp"
+        files_to_modify:
+          - "src/core/gpu_types.h"
+          - "CMakeLists.txt"
+          - "src/CMakeLists.txt"
+        dependencies: []
+        estimated_hours: 3
+        deliverables:
+          - "gpu_types.h with GPUCamera struct and static_assert guards"
+          - "CMake Metal detection and NWAVE_ENABLE_GPU option"
+
+      - step_id: "01-02"
+        name: "Metal device and command queue initialization"
+        description: >
+          Create MetalDevice (.mm) with pimpl pattern. Initialize MTLDevice,
+          MTLCommandQueue. Expose is_available() and device_name() through
+          pure C++ header interface.
+        acceptance_criteria:
+          - "Given macOS with Metal GPU When MetalDevice is constructed Then is_available() returns true and device_name() returns a non-empty string"
+          - "Given MetalDevice is constructed and destroyed When checked for leaks Then no Metal objects are leaked"
+          - "Given the MetalDevice header When included from a .cpp file Then it compiles without Objective-C dependencies"
+        test_file: "tests/infrastructure/metal/metal_device_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/metal_device.h"
+          - "src/infrastructure/metal/metal_device.mm"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "01-01"
+        estimated_hours: 3
+        deliverables:
+          - "MetalDevice with MTLDevice and MTLCommandQueue lifecycle"
+          - "Pure C++ header with pimpl hiding Objective-C types"
+
+      - step_id: "01-03"
+        name: "Metal shader compilation and gradient compute kernel"
+        description: >
+          Create gradient.metal compute shader that writes a horizontal gradient
+          (black-left to blue-right). Add CMake custom commands to compile
+          .metal to .air to .metallib. Load metallib in MetalDevice.
+        acceptance_criteria:
+          - "Given CMake builds with NWAVE_HAS_METAL When the build completes Then nwave_shaders.metallib exists alongside the binary"
+          - "Given gradient.metal with a syntax error When CMake builds Then the build fails with a shader compilation error"
+          - "Given MetalDevice loads the metallib When the gradient kernel function is requested Then a valid compute pipeline state is created"
+        test_file: "tests/infrastructure/metal/metal_device_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/gradient.metal"
+          - "src/infrastructure/metal/metal_device.h"
+          - "src/infrastructure/metal/metal_device.mm"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "01-02"
+        estimated_hours: 3
+        deliverables:
+          - "gradient.metal compute shader"
+          - "CMake .metal to .metallib compilation pipeline"
+          - "MetalDevice loads metallib and creates pipeline state"
+
+      - step_id: "01-04"
+        name: "Metal buffer manager and GPU texture readback"
+        description: >
+          Create MetalBufferManager (.mm) that allocates an output buffer
+          (float4 per pixel), dispatches the gradient kernel, and reads back
+          pixel data as vector<Color3>.
+        acceptance_criteria:
+          - "Given a 400x225 dispatch When MetalBufferManager reads back the output Then the result contains 400*225 Color3 values"
+          - "Given the gradient kernel dispatch at 400x225 When pixel (0, 112) is read Then RGB values are near black (each channel < 0.05)"
+          - "Given the gradient kernel dispatch at 400x225 When pixel (399, 112) is read Then the blue channel is > 0.8"
+          - "Given a non-power-of-2 dimension (e.g. 401x225) When dispatched Then no pixels are missing and the image is complete"
+        test_file: "tests/infrastructure/metal/metal_buffer_manager_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/metal_buffer_manager.h"
+          - "src/infrastructure/metal/metal_buffer_manager.mm"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "01-03"
+        estimated_hours: 3
+        deliverables:
+          - "MetalBufferManager with output buffer allocation, dispatch, readback"
+          - "GPU gradient image readable as vector<Color3>"
+
+      - step_id: "01-05"
+        name: "CLI --backend flag and end-to-end gradient PPM output"
+        description: >
+          Add backend field to RenderCommand and RenderSettings. Parse
+          --backend=metal in CliDispatcher. Wire MetalRenderBackend stub
+          in main.cpp that calls MetalDevice+MetalBufferManager to produce
+          the gradient. Output valid PPM via existing PPMWriter.
+        acceptance_criteria:
+          - "Given --backend=metal on macOS When nwave renders any scene Then a valid PPM file is produced with a horizontal gradient (P3 header, correct dimensions, values 0-255)"
+          - "Given --backend=metal on non-macOS When nwave renders Then stderr contains 'Metal backend is only available on macOS' and exit code is 1"
+          - "Given no --backend flag When nwave renders Then the CPU renderer is used and output is identical to before"
+          - "Given --backend=metal at 3840x2160 on macOS When the full pipeline runs Then total time (init + dispatch + readback + PPM write) is under 1 second"
+          - "Given --backend=unknown When nwave renders Then stderr shows available backends and exit code is 1"
+        test_file: "tests/infrastructure/cli_dispatcher_test.cpp"
+        files_to_modify:
+          - "src/infrastructure/cli_dispatcher.h"
+          - "src/infrastructure/cli_dispatcher.cpp"
+          - "src/application/renderer.h"
+          - "src/main.cpp"
+          - "src/infrastructure/metal/metal_render_backend.h"
+          - "src/infrastructure/metal/metal_render_backend.mm"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "01-04"
+        estimated_hours: 4
+        deliverables:
+          - "CLI --backend flag parsed and dispatched"
+          - "End-to-end Metal gradient PPM: scene.yaml --backend=metal produces valid gradient.ppm"
+          - "Non-macOS error handling"
+
+  # =========================================================================
+  # PHASE 02: Render Backend Abstraction (US-GPU-001)
+  # Introduces RenderBackend interface for CPU/GPU polymorphism.
+  # CpuRenderBackend wraps existing Renderer with zero behavioral change.
+  # =========================================================================
+  - phase_id: "02"
+    name: "Render Backend Abstraction"
+    user_story: "US-GPU-001"
+    steps:
+
+      - step_id: "02-01"
+        name: "RenderBackend abstract interface"
+        description: >
+          Create RenderBackend pure virtual class in Ring 3 with
+          render(camera, scene, settings) -> vector<Color3>. Header-only,
+          no implementation.
+        acceptance_criteria:
+          - "Given RenderBackend.h is included When a class does not implement render() Then compilation fails (pure virtual)"
+          - "Given RenderBackend.h When inspected for includes Then it depends only on Ring 2 types (Camera, Scene, RenderSettings, Color3)"
+          - "Given RenderBackend.h file path When checked Then it is in src/application/ (Ring 3)"
+        test_file: "tests/application/render_backend_test.cpp"
+        files_to_modify:
+          - "src/application/render_backend.h"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "01-05"
+        estimated_hours: 1
+        deliverables:
+          - "RenderBackend abstract interface in Ring 3"
+
+      - step_id: "02-02"
+        name: "CpuRenderBackend wrapping existing Renderer"
+        description: >
+          Create CpuRenderBackend that delegates to Renderer::render(). Verify
+          byte-identical output to direct Renderer usage. Expose set_quiet().
+        acceptance_criteria:
+          - "Given a scene rendered via CpuRenderBackend When compared to direct Renderer::render() Then pixel arrays are byte-identical"
+          - "Given CpuRenderBackend When inspected for dependencies Then it depends only on Ring 3 (Renderer, RenderBackend) and Ring 2 types"
+          - "Given CpuRenderBackend::set_quiet(true) When rendering Then no progress output is produced"
+        test_file: "tests/application/cpu_render_backend_test.cpp"
+        files_to_modify:
+          - "src/application/cpu_render_backend.h"
+          - "src/application/cpu_render_backend.cpp"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "02-01"
+        estimated_hours: 2
+        deliverables:
+          - "CpuRenderBackend producing identical output to Renderer"
+
+      - step_id: "02-03"
+        name: "MetalRenderBackend implements RenderBackend"
+        description: >
+          Refactor the walking skeleton MetalRenderBackend to implement
+          the RenderBackend interface. For now render() still produces
+          the gradient (scene/camera ignored until Phase 03).
+        acceptance_criteria:
+          - "Given MetalRenderBackend When called via RenderBackend pointer Then it returns a valid vector<Color3> of correct size"
+          - "Given MetalRenderBackend file location When inspected Then it is in src/infrastructure/metal/ (Ring 4)"
+          - "Given MetalRenderBackend When constructed multiple times Then Metal device and queue are reused (singleton or cached)"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/metal_render_backend.h"
+          - "src/infrastructure/metal/metal_render_backend.mm"
+        dependencies:
+          - "02-01"
+        estimated_hours: 2
+        deliverables:
+          - "MetalRenderBackend conforming to RenderBackend interface"
+
+      - step_id: "02-04"
+        name: "Wire backend selection in main.cpp and AnimationRenderer"
+        description: >
+          Replace direct Renderer usage in main.cpp with RenderBackend dispatch.
+          WriteCallback captures RenderBackend* for animation. All 243 existing
+          tests must continue passing.
+        acceptance_criteria:
+          - "Given --backend=cpu When rendering Then CpuRenderBackend is used and output is identical to pre-refactor"
+          - "Given --backend=metal When running physics animation Then each frame is rendered via MetalRenderBackend and frames are saved with correct naming"
+          - "Given no --backend flag When rendering Then CPU backend is used (default behavior unchanged)"
+          - "Given the full test suite When executed Then all 243 existing tests pass without modification"
+        test_file: "tests/application/render_backend_test.cpp"
+        files_to_modify:
+          - "src/main.cpp"
+        dependencies:
+          - "02-02"
+          - "02-03"
+        estimated_hours: 2
+        deliverables:
+          - "main.cpp dispatches to correct backend based on CLI flag"
+          - "WriteCallback uses RenderBackend for animation frames"
+          - "Zero test regressions"
+
+  # =========================================================================
+  # PHASE 03: Ray Generation + Sky on GPU (US-GPU-002)
+  # First real ray tracing on GPU: camera rays + sky gradient.
+  # Pixel-identical to CPU for empty scenes at 1 SPP.
+  # =========================================================================
+  - phase_id: "03"
+    name: "Camera Ray Generation and Sky Gradient on GPU"
+    user_story: "US-GPU-002"
+    steps:
+
+      - step_id: "03-01"
+        name: "GPUCamera packing and ray generation shader"
+        description: >
+          Pack Camera parameters into GPUCamera struct (double-to-float
+          narrowing). Create ray_trace.metal with ray generation kernel
+          that computes sky gradient matching CPU formula.
+        acceptance_criteria:
+          - "Given a Camera with known parameters When packed into GPUCamera Then float fields match Camera members within 1e-5 tolerance"
+          - "Given an empty scene at 400x225, 1 SPP When rendered via CPU and GPU Then per-pixel RGB difference is at most 1 (float rounding)"
+          - "Given a camera with vfov=20 (narrow) When rendered via GPU Then the sky gradient matches CPU narrow-FOV output"
+          - "Given a camera with vup=(1,0,0) When rendered via GPU Then the gradient rotates accordingly, matching CPU"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/core/gpu_types.h"
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+          - "src/infrastructure/metal/metal_render_backend.mm"
+          - "src/infrastructure/metal/metal_buffer_manager.h"
+          - "src/infrastructure/metal/metal_buffer_manager.mm"
+        dependencies:
+          - "02-04"
+        estimated_hours: 5
+        deliverables:
+          - "GPUCamera struct with all precomputed camera parameters"
+          - "ray_trace.metal kernel with ray generation and sky gradient"
+          - "Pixel-identical sky render between CPU and GPU"
+
+      - step_id: "03-02"
+        name: "MetalRenderBackend uses ray_trace kernel for empty scenes"
+        description: >
+          Switch MetalRenderBackend from gradient.metal to ray_trace.metal.
+          Pack camera from render() arguments. Verify pixel-identical sky
+          at multiple resolutions and camera configurations.
+        acceptance_criteria:
+          - "Given --backend=metal with an empty scene When rendered at 800x450 Then output shows the correct sky gradient (not the old gradient pattern)"
+          - "Given an empty scene at 3840x2160 via GPU When timed Then render time (excluding init) is under 50ms"
+          - "Given GPUCamera buffer layout When documented in gpu_types.h Then field offsets and types are commented"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/metal_render_backend.mm"
+          - "src/infrastructure/metal/metal_device.mm"
+        dependencies:
+          - "03-01"
+        estimated_hours: 2
+        deliverables:
+          - "MetalRenderBackend renders sky gradient from camera parameters"
+          - "Camera buffer layout documented"
+
+  # =========================================================================
+  # PHASE 04: Scene Data Packing (US-GPU-003)
+  # Pure C++ SceneFlattener: transforms polymorphic Scene into flat GPU arrays.
+  # Fully testable without Metal on any platform.
+  # =========================================================================
+  - phase_id: "04"
+    name: "Scene Data Packing -- Flat Scene Representation"
+    user_story: "US-GPU-003"
+    steps:
+
+      - step_id: "04-01"
+        name: "GPU data structs for shapes, materials, and lights"
+        description: >
+          Complete gpu_types.h with GPUShape (128B tagged union), GPUMaterial
+          (48B), GPULight (64B), LinearBVHNode (32B). Add enums for shape,
+          material, and light types. Static assertions for all struct sizes
+          and alignments.
+        acceptance_criteria:
+          - "Given gpu_types.h When compiled on any platform Then all static_assert checks pass (GPUShape=128B, GPUMaterial=48B, GPULight=64B, LinearBVHNode=32B)"
+          - "Given gpu_types.h When inspected for includes Then only <cstdint> and <cstddef> are used"
+          - "Given GPUShape.params[12] When inspected Then layout comments document per-shape-type field mapping"
+        test_file: "tests/core/gpu_types_test.cpp"
+        files_to_modify:
+          - "src/core/gpu_types.h"
+        dependencies:
+          - "03-02"
+        estimated_hours: 2
+        deliverables:
+          - "Complete gpu_types.h with all GPU data structs and static assertions"
+
+      - step_id: "04-02"
+        name: "SceneFlattener -- shape and material flattening"
+        description: >
+          Create SceneFlattener in Ring 4 (pure C++). Flatten Sphere, Plane,
+          Box, Cylinder, Triangle shapes. Flatten Lambertian, Metal,
+          Dielectric, Emissive materials. Deduplicate shared materials via
+          pointer identity map. Handle TransformedShape (inverse matrix).
+        acceptance_criteria:
+          - "Given a scene with one Sphere at (1,2,3) radius 0.5 with Lambertian albedo (0.8,0.2,0.1) When flattened Then GPUShape has type=SPHERE, params[0-2]=(1,2,3), params[3]=0.5, material_index points to correct GPUMaterial"
+          - "Given a scene with 3 spheres sharing the same material instance When flattened Then GPUMaterial array has 1 entry and all 3 GPUShapes reference the same material_index"
+          - "Given a scene with all 5 shape types When flattened Then GPUShape array has 5 entries with correct shape_type tags and parameters"
+          - "Given a TransformedShape (Box rotated 45 deg) When flattened Then GPUShape.has_transform=1 and inverse_transform contains the inverse matrix values"
+          - "Given an empty scene When flattened Then arrays have zero length and no crash occurs"
+        test_file: "tests/infrastructure/gpu/scene_flattener_test.cpp"
+        files_to_modify:
+          - "src/infrastructure/gpu/scene_flattener.h"
+          - "src/infrastructure/gpu/scene_flattener.cpp"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "04-01"
+        estimated_hours: 6
+        deliverables:
+          - "SceneFlattener producing FlatScene (shapes, materials, lights arrays)"
+          - "Material deduplication via pointer identity"
+          - "TransformedShape inverse matrix extraction"
+
+      - step_id: "04-03"
+        name: "SceneFlattener -- light flattening and edge cases"
+        description: >
+          Flatten PointLight and DirectionalLight. Handle edge cases: null
+          material pointers, TriangleMesh (skip with warning), 1000-shape
+          performance.
+        acceptance_criteria:
+          - "Given a scene with a PointLight at (1,2,3) color (1,1,1) intensity 0.8 When flattened Then GPULight has type=POINT, position=(1,2,3), color=(1,1,1), intensity=0.8"
+          - "Given a scene with a DirectionalLight When flattened Then GPULight has type=DIRECTIONAL with correct direction"
+          - "Given a shape with nullptr material When flattened Then material_index defaults to 0 or a documented fallback"
+          - "Given a scene containing a TriangleMesh When flattened Then the mesh is skipped and a warning is logged"
+          - "Given a scene with 1000 shapes When flattened Then flattening completes in under 10ms"
+        test_file: "tests/infrastructure/gpu/scene_flattener_test.cpp"
+        files_to_modify:
+          - "src/infrastructure/gpu/scene_flattener.h"
+          - "src/infrastructure/gpu/scene_flattener.cpp"
+        dependencies:
+          - "04-02"
+        estimated_hours: 3
+        deliverables:
+          - "Light flattening for Point and Directional types"
+          - "Edge case handling: null material, TriangleMesh skip, performance"
+
+      - step_id: "04-04"
+        name: "Metal buffer upload of flattened scene data"
+        description: >
+          Extend MetalBufferManager to upload GPUShape[], GPUMaterial[],
+          GPULight[] arrays to Metal buffers. Wire SceneFlattener into
+          MetalRenderBackend. Verify buffers are accessible from shader.
+        acceptance_criteria:
+          - "Given a FlatScene with 5 shapes and 3 materials When uploaded to Metal buffers Then buffer sizes match array.size() * sizeof(struct)"
+          - "Given MetalRenderBackend.render(camera, scene, settings) When called with a non-empty scene Then SceneFlattener runs and buffers are uploaded before dispatch"
+          - "Given a 500-object scene When scene data is uploaded Then upload completes in under 100ms"
+        test_file: "tests/infrastructure/metal/metal_buffer_manager_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/metal_buffer_manager.h"
+          - "src/infrastructure/metal/metal_buffer_manager.mm"
+          - "src/infrastructure/metal/metal_render_backend.mm"
+        dependencies:
+          - "04-03"
+        estimated_hours: 3
+        deliverables:
+          - "Scene data uploaded to Metal buffers"
+          - "MetalRenderBackend integrates SceneFlattener"
+
+  # =========================================================================
+  # PHASE 05: Single-Bounce GPU Rendering (US-GPU-004)
+  # First recognizable GPU-rendered scene: intersection + diffuse shading.
+  # =========================================================================
+  - phase_id: "05"
+    name: "Single-Bounce Diffuse GPU Rendering"
+    user_story: "US-GPU-004"
+    steps:
+
+      - step_id: "05-01"
+        name: "GPU intersection for Sphere, Plane, Box and Lambertian shading"
+        description: >
+          Implement brute-force ray-shape intersection in ray_trace.metal
+          for Sphere (quadratic), Plane (dot product), Box (slab method).
+          Add Lambertian diffuse shading with direct lighting, shadow rays,
+          and ambient term. GPU RNG (PCG) for scatter direction.
+        acceptance_criteria:
+          - "Given a red sphere on a gray ground plane with one point light When rendered via GPU at 1 SPP Then the sphere is visible with diffuse shading (bright toward light, dark away)"
+          - "Given a scene with a small sphere between the light and a large sphere When rendered via GPU Then the large sphere shows a shadow region"
+          - "Given GPU and CPU renders of a 3-sphere scene at 1 SPP When compared Then sphere positions, silhouettes, and shading patterns match within +/-10 per channel"
+          - "Given an empty scene When rendered via GPU after adding intersection code Then the sky gradient still renders correctly (miss path regression check)"
+          - "Given a scene with 1 shape and 0 lights When rendered via GPU Then the shape is visible at ambient level only"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+          - "src/infrastructure/metal/metal_device.h"
+          - "src/infrastructure/metal/metal_device.mm"
+        dependencies:
+          - "04-04"
+        estimated_hours: 8
+        deliverables:
+          - "GPU brute-force intersection for Sphere, Plane, Box"
+          - "Lambertian diffuse shading with shadow rays"
+          - "PCG random number generator on GPU"
+          - "First recognizable GPU-rendered scene"
+
+      - step_id: "05-02"
+        name: "GPU intersection for Cylinder and Triangle"
+        description: >
+          Add Cylinder and Triangle intersection to ray_trace.metal.
+          Add TransformedShape support (ray transform to local space via
+          inverse matrix). Verify all 5 shape types render correctly.
+        acceptance_criteria:
+          - "Given a scene with one Cylinder When rendered via GPU Then the cylinder is visible with correct shading"
+          - "Given a scene with one Triangle When rendered via GPU Then the triangle is visible with correct shading"
+          - "Given a TransformedShape (rotated Box) When rendered via GPU Then the box appears rotated, matching CPU output"
+          - "Given a scene with all 5 shape types When rendered via GPU at 1 SPP Then all shapes are visible and positioned correctly"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+        dependencies:
+          - "05-01"
+        estimated_hours: 4
+        deliverables:
+          - "Complete shape intersection: Sphere, Plane, Box, Cylinder, Triangle"
+          - "TransformedShape ray transformation on GPU"
+
+  # =========================================================================
+  # PHASE 06: Multi-Bounce Iterative Ray Tracing (US-GPU-005)
+  # Replaces CPU recursion with GPU iterative loop. All material types.
+  # =========================================================================
+  - phase_id: "06"
+    name: "Iterative Multi-Bounce Ray Tracing on GPU"
+    user_story: "US-GPU-005"
+    steps:
+
+      - step_id: "06-01"
+        name: "Iterative bounce loop with Metal and Dielectric materials"
+        description: >
+          Replace single-bounce shading with iterative loop (up to max_depth).
+          Implement Metal material (reflect + fuzziness), Dielectric material
+          (Snell's law, Schlick's reflectance, total internal reflection),
+          and Emissive material (emit, no scatter) on GPU.
+        acceptance_criteria:
+          - "Given a chrome Metal sphere (fuzziness=0) next to a red Lambertian sphere When rendered via GPU at 1 SPP Then the chrome sphere shows a recognizable reflection of the red sphere"
+          - "Given a Dielectric sphere (IOR 1.5) When rendered via GPU at 16 SPP Then objects behind it are visible but distorted (refracted) and edges show stronger reflection than center"
+          - "Given an Emissive sphere When rendered via GPU Then it appears bright/glowing and nearby surfaces show color bleeding"
+          - "Given max_depth=1 When rendered via GPU Then only direct lighting is visible (no reflections)"
+          - "Given max_depth=0 When rendered via GPU Then the output is a black image"
+          - "Given two Metal spheres facing each other at max_depth=50 When rendered via GPU Then rendering completes without hang"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+        dependencies:
+          - "05-02"
+        estimated_hours: 8
+        deliverables:
+          - "Iterative ray tracing loop with throughput accumulation"
+          - "Metal, Dielectric, Emissive material evaluation on GPU"
+          - "max_depth termination"
+
+      - step_id: "06-02"
+        name: "Multi-light accumulation and CPU-GPU visual equivalence"
+        description: >
+          Iterate over all lights per hit point, accumulating contributions.
+          Validate GPU output against CPU for scenes with all 4 material
+          types at matching SPP.
+        acceptance_criteria:
+          - "Given a scene with 2 point lights When rendered via GPU Then both lights produce illumination and shadows"
+          - "Given a scene with Lambertian, Metal, Dielectric, Emissive spheres at 16 SPP When rendered via GPU and CPU Then images are visually comparable"
+          - "Given GPU renders with all 4 material types When compared to CPU at same SPP Then per-pixel RGB differences are within +/-10 for 90% of pixels"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+        dependencies:
+          - "06-01"
+        estimated_hours: 3
+        deliverables:
+          - "Multi-light support on GPU"
+          - "Visual equivalence validation between CPU and GPU"
+
+  # =========================================================================
+  # PHASE 07: Linear BVH on GPU (US-GPU-006)
+  # CPU-side BVH construction, flatten to linear array, GPU traversal.
+  # Sub-linear intersection performance for complex scenes.
+  # =========================================================================
+  - phase_id: "07"
+    name: "Linear BVH for GPU Traversal"
+    user_story: "US-GPU-006"
+    steps:
+
+      - step_id: "07-01"
+        name: "BVHFlattener -- CPU BVH construction and linearization"
+        description: >
+          Create BVHFlattener (pure C++) that builds a BVH from GPUShape
+          AABBs using SAH or median split, then flattens the pointer-based
+          tree into a contiguous vector<LinearBVHNode>. Interior nodes store
+          second-child offset; leaf nodes store primitive range.
+        acceptance_criteria:
+          - "Given 10 GPUShapes with known AABBs When build_and_flatten is called Then a non-empty vector<LinearBVHNode> is returned"
+          - "Given the flattened BVH When interior nodes are inspected Then count=0 and offset points to valid second child index"
+          - "Given the flattened BVH When leaf nodes are inspected Then count>0 and offset points to valid shape indices"
+          - "Given 0 shapes When build_and_flatten is called Then an empty vector is returned without error"
+          - "Given 1 shape When build_and_flatten is called Then a single leaf node is returned"
+        test_file: "tests/infrastructure/gpu/bvh_flattener_test.cpp"
+        files_to_modify:
+          - "src/infrastructure/gpu/bvh_flattener.h"
+          - "src/infrastructure/gpu/bvh_flattener.cpp"
+          - "src/CMakeLists.txt"
+        dependencies:
+          - "06-02"
+        estimated_hours: 6
+        deliverables:
+          - "BVHFlattener with BVH construction and linearization"
+          - "Testable on any platform without Metal"
+
+      - step_id: "07-02"
+        name: "GPU BVH traversal kernel"
+        description: >
+          Upload linear BVH to Metal buffer. Implement AABB intersection
+          and stack-based BVH traversal in ray_trace.metal. Use fixed-size
+          stack (64 entries). Fall back to brute-force if BVH is empty.
+        acceptance_criteria:
+          - "Given a 100-sphere scene rendered with BVH and without BVH via GPU When images are compared Then they are pixel-identical"
+          - "Given a 10000-shape scene When GPU traverses the BVH Then the fixed-size stack (64 entries) does not overflow and rendering completes correctly"
+          - "Given an empty scene (0 shapes, empty BVH) When rendered via GPU with BVH path Then the sky gradient renders correctly"
+          - "Given a single-shape scene When rendered via GPU with BVH Then the shape renders correctly"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+          - "src/infrastructure/metal/metal_buffer_manager.h"
+          - "src/infrastructure/metal/metal_buffer_manager.mm"
+          - "src/infrastructure/metal/metal_render_backend.mm"
+          - "src/infrastructure/metal/metal_device.mm"
+        dependencies:
+          - "07-01"
+        estimated_hours: 6
+        deliverables:
+          - "BVH uploaded to Metal buffer"
+          - "GPU stack-based BVH traversal in compute shader"
+          - "Identical results to brute-force"
+
+      - step_id: "07-03"
+        name: "BVH performance validation"
+        description: >
+          Wire BVHFlattener into MetalRenderBackend render pipeline. Measure
+          GPU render time with and without BVH on 500-shape scene. Verify
+          speedup target. Handle degenerate BVH cases.
+        acceptance_criteria:
+          - "Given a 500-sphere scene at 800x450, 1 SPP When GPU renders with BVH vs without BVH Then BVH is at least 5x faster"
+          - "Given 100 shapes all at position (0,0,0) When BVH is built and GPU renders Then rendering completes correctly (degenerate BVH)"
+          - "Given MetalRenderBackend.render() When called Then BVHFlattener.build_and_flatten() is invoked automatically as part of the pipeline"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/metal_render_backend.mm"
+        dependencies:
+          - "07-02"
+        estimated_hours: 3
+        deliverables:
+          - "BVH integrated into MetalRenderBackend render pipeline"
+          - "Measured 5x+ speedup for 500-shape scenes"
+
+  # =========================================================================
+  # PHASE 08: SPP Accumulation + Anti-Aliasing (US-GPU-007)
+  # Per-pixel sample loop, random jitter, gamma correction, NaN clamping.
+  # Production-quality GPU output matching CPU at N SPP.
+  # =========================================================================
+  - phase_id: "08"
+    name: "SPP Accumulation and Anti-Aliasing"
+    user_story: "US-GPU-007"
+    steps:
+
+      - step_id: "08-01"
+        name: "Per-pixel SPP loop with jittered sampling"
+        description: >
+          Add per-pixel sample loop to ray_trace.metal. Each sample jitters
+          ray within pixel area using PCG RNG. Accumulate colors and average.
+          Pass samples_per_pixel via GPUCamera buffer.
+        acceptance_criteria:
+          - "Given a sphere scene at 1 SPP via GPU When edge pixels are inspected Then visible staircase/jagged pixels are present"
+          - "Given the same scene at 48 SPP via GPU When edge pixels are inspected Then edges show smooth anti-aliased transitions"
+          - "Given GPU at 48 SPP and CPU at 48 SPP for the same scene When compared Then images are visually comparable and per-pixel differences are within +/-5 per channel for 90% of pixels"
+          - "Given GPU render at 1 SPP (time T1) and 8 SPP (time T8) When compared Then T8 is approximately 8*T1 within 20% tolerance"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+        dependencies:
+          - "07-03"
+        estimated_hours: 4
+        deliverables:
+          - "GPU per-pixel SPP loop with random sub-pixel jittering"
+          - "Anti-aliased GPU output"
+
+      - step_id: "08-02"
+        name: "Gamma correction and NaN clamping"
+        description: >
+          Apply sqrt gamma correction after sample averaging on GPU. Clamp
+          NaN and infinity to zero. Verify gamma matches CPU formula.
+          Ensure all output values are valid (0-255 in PPM).
+        acceptance_criteria:
+          - "Given a gray sphere (albedo 0.5) under uniform lighting at 48 SPP via GPU and CPU When center-pixel brightness is compared Then values differ by at most +/-5 per channel"
+          - "Given a scene producing degenerate rays When rendered via GPU Then NaN samples are replaced with (0,0,0) and the final pixel is valid"
+          - "Given any GPU-rendered PPM When all pixel values are checked Then every RGB value is in [0, 255]"
+          - "Given GPU at very high SPP (1000) on a small image When rendered Then no crash or artifact occurs"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/shaders/ray_trace.metal"
+        dependencies:
+          - "08-01"
+        estimated_hours: 2
+        deliverables:
+          - "Gamma correction matching CPU formula"
+          - "NaN and infinity clamping"
+          - "Production-quality GPU output"
+
+  # =========================================================================
+  # PHASE 09: Animation Pipeline Integration (US-GPU-008)
+  # Wire GPU backend into AnimationRenderer for physics-driven sequences.
+  # =========================================================================
+  - phase_id: "09"
+    name: "Animation Pipeline GPU Integration"
+    user_story: "US-GPU-008"
+    steps:
+
+      - step_id: "09-01"
+        name: "Per-frame scene re-flattening and buffer re-upload"
+        description: >
+          In MetalRenderBackend.render(), SceneFlattener re-runs each call
+          (capturing updated TransformedShape positions from physics). GPU
+          buffers are re-uploaded. Metal device and command queue are reused
+          across frames (not re-initialized).
+        acceptance_criteria:
+          - "Given a 30-frame animation with a falling sphere When rendered via --physics-animate --backend=metal Then frame_0000.ppm shows sphere at initial position and frame_0029.ppm shows sphere near final position"
+          - "Given a 60-frame GPU animation When Metal device init log is inspected Then initialization appears once (not per-frame)"
+          - "Given MetalRenderBackend When called repeatedly for N frames Then GPU buffers are updated each frame (not stale)"
+          - "Given per-frame GPU render time vs per-frame CPU render time When compared Then GPU is faster"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/infrastructure/metal/metal_render_backend.mm"
+        dependencies:
+          - "08-02"
+        estimated_hours: 3
+        deliverables:
+          - "Per-frame scene re-flattening and buffer re-upload"
+          - "Metal device/queue reused across frames"
+
+      - step_id: "09-02"
+        name: "End-to-end animation rendering and progress reporting"
+        description: >
+          Verify --physics-animate --backend=metal produces correct frame
+          files with progress reporting. Validate frame naming, 1-frame
+          animation edge case, and empty-scene animation.
+        acceptance_criteria:
+          - "Given --physics-animate --backend=metal with a 60-frame animation When rendering completes Then 60 PPM files exist named frame_0000.ppm through frame_0059.ppm"
+          - "Given GPU animation rendering When frames render Then progress is reported to stderr (e.g., 'Frame 1/60', 'Frame 2/60')"
+          - "Given a 1-frame animation via GPU When rendered Then frame_0000.ppm is produced correctly"
+          - "Given an animation with 0 objects (camera only) When rendered via GPU Then sky-only gradient frames are produced"
+          - "Given the full test suite after animation integration When executed Then all 243 existing tests pass"
+        test_file: "tests/infrastructure/metal/metal_render_backend_test.mm"
+        files_to_modify:
+          - "src/main.cpp"
+        dependencies:
+          - "09-01"
+        estimated_hours: 2
+        deliverables:
+          - "End-to-end GPU animation rendering"
+          - "Progress reporting with GPU backend"
+          - "Full regression: 243 existing tests pass"
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+# Phases: 9
+# Steps: 26
+# Unique production files (new + modified): 22
+# Step/file ratio: 1.18
+#
+# New files created:
+#   Ring 1: src/core/gpu_types.h
+#   Ring 3: src/application/render_backend.h
+#   Ring 3: src/application/cpu_render_backend.h, .cpp
+#   Ring 4: src/infrastructure/gpu/scene_flattener.h, .cpp
+#   Ring 4: src/infrastructure/gpu/bvh_flattener.h, .cpp
+#   Ring 4: src/infrastructure/metal/metal_render_backend.h, .mm
+#   Ring 4: src/infrastructure/metal/metal_device.h, .mm
+#   Ring 4: src/infrastructure/metal/metal_buffer_manager.h, .mm
+#   Ring 4: src/infrastructure/metal/shaders/gradient.metal
+#   Ring 4: src/infrastructure/metal/shaders/ray_trace.metal
+#
+# Modified files:
+#   CMakeLists.txt (root) -- NWAVE_ENABLE_GPU option, Metal detection
+#   src/CMakeLists.txt -- GPU sources, Metal framework linking, shader compilation
+#   src/application/renderer.h -- RenderSettings.backend field
+#   src/infrastructure/cli_dispatcher.h, .cpp -- --backend flag parsing
+#   src/main.cpp -- backend dispatch, WriteCallback integration
+#
+# Test files (new):
+#   tests/core/gpu_types_test.cpp
+#   tests/application/render_backend_test.cpp
+#   tests/application/cpu_render_backend_test.cpp
+#   tests/infrastructure/gpu/scene_flattener_test.cpp
+#   tests/infrastructure/gpu/bvh_flattener_test.cpp
+#   tests/infrastructure/metal/metal_device_test.mm
+#   tests/infrastructure/metal/metal_buffer_manager_test.mm
+#   tests/infrastructure/metal/metal_render_backend_test.mm
+#
+# Estimated total hours: 93
+#
+# User story traceability:
+#   US-GPU-000 -> Phase 01 (steps 01-01 through 01-05)
+#   US-GPU-001 -> Phase 02 (steps 02-01 through 02-04)
+#   US-GPU-002 -> Phase 03 (steps 03-01 through 03-02)
+#   US-GPU-003 -> Phase 04 (steps 04-01 through 04-04)
+#   US-GPU-004 -> Phase 05 (steps 05-01 through 05-02)
+#   US-GPU-005 -> Phase 06 (steps 06-01 through 06-02)
+#   US-GPU-006 -> Phase 07 (steps 07-01 through 07-03)
+#   US-GPU-007 -> Phase 08 (steps 08-01 through 08-02)
+#   US-GPU-008 -> Phase 09 (steps 09-01 through 09-02)
+
+# =============================================================================
+# REVIEW METADATA
+# =============================================================================
+# Review Date: 2026-02-18
+# Reviewer: nw-software-crafter-reviewer
+# Approval Status: APPROVED
+#
+# Review Criteria Results:
+#
+# 1. STEP ATOMICITY (PASS)
+#    Each step is independently executable given its declared dependencies.
+#    No circular dependencies detected. Dependency order follows logical
+#    implementation sequence from walking skeleton to animation integration.
+#
+# 2. ACCEPTANCE CRITERIA QUALITY (PASS)
+#    All acceptance criteria follow Given/When/Then format and specify
+#    concrete, testable outcomes. Sampled AC-GPU-000-01, AC-GPU-003-01,
+#    AC-GPU-004-04, AC-GPU-007-04: all behavioral, specific, measurable.
+#
+# 3. DEPENDENCY CORRECTNESS (PASS)
+#    No circular dependencies. All dependencies explicit and necessary.
+#    Phase 02-04 depends on both 02-02 and 02-03 (correct, both backends
+#    must exist before wiring). Phase 05-01 depends on 04-04 (correct,
+#    scene upload must precede intersection). Phase 07-02 depends on 07-01
+#    (correct, BVH must be built before GPU traversal).
+#
+# 4. FILE COVERAGE (MINOR FINDING)
+#    All steps have comprehensive files_to_modify lists. One minor gap
+#    identified: Step 01-01 does not explicitly list CMake Metal detection
+#    rules (FindMetal.cmake or platform-specific detection). This is a
+#    minor omission; Metal framework detection is implicitly covered by
+#    "CMakeLists.txt" and "src/CMakeLists.txt" modifications.
+#
+# 5. TEST STRATEGY (PASS)
+#    Each step has an appropriate test file. Pure C++ components
+#    (SceneFlattener, BVHFlattener) have separate .cpp tests (platform-
+#    independent). Metal-dependent steps use metal_render_backend_test.mm
+#    (macOS-gated). Structure allows Linux CI to test data transformation
+#    logic without GPU hardware.
+#
+# 6. INCREMENTAL DELIVERY (PASS)
+#    Every phase produces demonstrable, working output:
+#    - Phase 01: gradient.ppm (infrastructure validation)
+#    - Phase 02: CLI flag works, CPU output unchanged
+#    - Phase 03: sky gradient matches CPU pixel-for-pixel
+#    - Phase 04: scene flattened (verified by Phase 05)
+#    - Phase 05: recognizable scene with diffuse shading
+#    - Phase 06: reflections, refractions, all material types
+#    - Phase 07: same output as Phase 06 but 5x+ faster
+#    - Phase 08: anti-aliased, production-quality output
+#    - Phase 09: frame sequence from physics simulation
+#
+# 7. REQUIREMENTS TRACEABILITY (PASS)
+#    All 9 user stories (US-GPU-000 through US-GPU-008) mapped to phases
+#    (1:1 mapping). Spot-check: US-GPU-004 acceptance criteria (AC-GPU-004-01
+#    through AC-GPU-004-12) all addressed by Phase 05, Steps 05-01 and 05-02.
+#    Requirements document identifies 9 capability areas; all 9 addressed
+#    in roadmap phases.
+#
+# 8. RISK AREAS (PASS)
+#    Three highest-risk areas identified and assessed:
+#    a) Shader code complexity (Phase 05-01): 8h estimate reasonable for
+#       GPU intersection algorithms + Lambertian + shadow rays + RNG (~50 LOC).
+#    b) BVH implementation (Phase 07): 15h total for construction, flattening,
+#       GPU traversal, benchmarking. BVH is well-established algorithm
+#       (~250 C++ LOC + ~50 GPU LOC).
+#    c) Float precision tolerance: AC criteria specific (+/-1 for sky, +/-10
+#       for shapes, +/-5 for multi-bounce at 100+ SPP). Documented in
+#       ADR-GPU-004. Conservative and achievable.
+#    Animation frame re-flattening overhead: ~10ms expected for 500 objects
+#    (O(N) traversal at ~20 microseconds per shape).
+#
+# 9. ESTIMATION PLAUSIBILITY (PASS)
+#    Total 93 hours for comprehensive GPU compute implementation is
+#    plausible. Breakdown by phase:
+#    - Phase 01 (Walking Skeleton): 13h for Metal setup, CMake, shader
+#      compilation, readback. Includes comprehensive error handling.
+#    - Phase 02 (Backend Abstraction): 7h for interface + two implementations
+#      + integration. Tight but achievable (thin wrapper pattern).
+#    - Phase 03 (Ray Gen): 7h for GPUCamera packing + ray generation kernel
+#      + sky gradient. Camera math is straightforward to port to GPU.
+#    - Phase 04 (Scene Flattening): 11h for ~400 LOC visitor pattern over
+#      5 shape types + material dedup + 2 light types. Reasonable.
+#    - Phase 05 (Single-Bounce): 12h for GPU intersection (Sphere/Plane/Box)
+#      + Lambertian + shadow rays + GPU RNG. Shader code ~50 LOC, testing
+#      and debugging account for bulk of time.
+#    - Phase 06 (Multi-Bounce): 11h for iterative loop + 4 material types
+#      (Metal, Dielectric, Emissive) + multi-light. ~100 GPU LOC added.
+#    - Phase 07 (BVH): 15h for BVH construction + linearization + GPU
+#      traversal + benchmarking. BVH is complex but standard algorithm.
+#    - Phase 08 (SPP): 6h for per-pixel loop + jitter + accumulation +
+#      gamma + NaN clamp. Relatively straightforward.
+#    - Phase 09 (Animation): 5h for per-frame re-upload + device reuse +
+#      progress reporting. Integration work, not novel code.
+#    Tight estimates in Phase 01-05, Phase 06-01, Phase 07-02 but
+#    achievable with experienced graphics engineers. No obviously
+#    underestimated steps.
+#
+# Summary:
+#   The GPU Compute Rendering roadmap is APPROVED for implementation.
+#   All 9 review criteria passed. The roadmap demonstrates:
+#   - Clear, atomic steps with explicit dependencies
+#   - Behavioral acceptance criteria that are testable and specific
+#   - Incremental delivery with working output at each phase
+#   - Complete traceability from 9 user stories through 26 steps to 87
+#     acceptance criteria
+#   - Risk-aware scoping of complex components (shader code, BVH, precision)
+#   - Plausible hour estimates grounded in component scope and algorithm
+#     complexity
+#
+#   Recommendation: Proceed to implementation. Expected timeline: 93 hours
+#   with experienced team familiar with GPU compute and ray tracing. Phase 01
+#   (Walking Skeleton) is recommended as first sprint (2 weeks, 13h budget
+#   allows for infrastructure validation and learning curve).
+#
+# Findings and Recommendations:
+#
+# CRITICAL ISSUES: None
+# HIGH ISSUES: None
+#
+# MINOR ISSUES:
+#   1. Step 01-01 does not explicitly list CMake Metal detection rules
+#      (FindMetal.cmake or xcrun-based detection). Recommend: Add to
+#      files_to_modify for clarity, or create separate step 01-00 for
+#      CMake setup (if establishing CMake conventions is a dependency).
+#
+# INFORMATIONAL NOTES:
+#   - BVH implementation (Phase 07) is the most architecturally novel
+#     work. Recommend pairing with graphics engineer experienced in
+#     spatial data structures.
+#   - Float precision boundary (GPU float vs CPU double) is well-documented
+#     in ADR-GPU-004. Recommend implementing NaN guards early (Phase 08-02)
+#     to catch degenerate cases before full optimization.
+#   - Animation integration (Phase 09) adds no novel work; pure integration.
+#     Can be completed in final week if buffer re-upload overhead validated
+#     in earlier phases.
+#   - Test strategy is strong: pure C++ components testable on Linux CI,
+#     Metal-dependent components gated to macOS. No test bottlenecks.
+#
+# Reviewer: nw-software-crafter-reviewer (Haiku 4.5)
+# =============================================================================

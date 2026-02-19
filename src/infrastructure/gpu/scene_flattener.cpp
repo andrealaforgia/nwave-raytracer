@@ -7,6 +7,7 @@
 #include "domain/shapes/triangle.h"
 #include "domain/shapes/transformed_shape.h"
 #include "domain/shapes/triangle_mesh.h"
+#include "domain/shapes/deformable_mesh.h"
 #include "domain/materials/lambertian.h"
 #include "domain/materials/metal.h"
 #include "domain/materials/dielectric.h"
@@ -166,8 +167,67 @@ FlatScene SceneFlattener::flatten(const Scene& scene) const {
         // Handle TransformedShape: unwrap to inner shape, record transform
         const TransformedShape* transformed = dynamic_cast<const TransformedShape*>(shape);
 
-        GPUShape gpu_shape;
         const Shape* inner_shape = transformed ? transformed->inner().get() : shape;
+
+        // DeformableMesh: decompose into individual GPU triangles
+        if (auto* dmesh = dynamic_cast<const DeformableMesh*>(inner_shape)) {
+            const auto& verts = dmesh->vertices();
+            const auto& faces = dmesh->face_indices();
+            uint32_t mat_idx = resolve_material_index(dmesh->material(), material_map, result.materials);
+
+            // Compute mesh centroid from all vertices for outward-normal orientation
+            double cx = 0, cy = 0, cz = 0;
+            for (const auto& v : verts) {
+                cx += v.x(); cy += v.y(); cz += v.z();
+            }
+            double inv_n = 1.0 / static_cast<double>(verts.size());
+            cx *= inv_n; cy *= inv_n; cz *= inv_n;
+
+            for (size_t f = 0; f + 2 < faces.size(); f += 3) {
+                GPUShape tri_shape;
+                std::memset(&tri_shape, 0, sizeof(GPUShape));
+                tri_shape.shape_type = static_cast<uint32_t>(GPUShapeType::TRIANGLE);
+                const auto& va = verts[faces[f]];
+                const auto& vb = verts[faces[f + 1]];
+                const auto& vc = verts[faces[f + 2]];
+
+                // Compute geometric normal: cross(vb-va, vc-va)
+                double e1x = vb.x() - va.x(), e1y = vb.y() - va.y(), e1z = vb.z() - va.z();
+                double e2x = vc.x() - va.x(), e2y = vc.y() - va.y(), e2z = vc.z() - va.z();
+                double nx = e1y * e2z - e1z * e2y;
+                double ny = e1z * e2x - e1x * e2z;
+                double nz = e1x * e2y - e1y * e2x;
+
+                // Triangle center
+                double tcx = (va.x() + vb.x() + vc.x()) / 3.0;
+                double tcy = (va.y() + vb.y() + vc.y()) / 3.0;
+                double tcz = (va.z() + vb.z() + vc.z()) / 3.0;
+
+                // Direction from centroid to triangle center (should align with outward normal)
+                double dx = tcx - cx, dy = tcy - cy, dz = tcz - cz;
+                double dot_val = nx * dx + ny * dy + nz * dz;
+
+                // If normal points inward (toward centroid), swap v1/v2 to flip winding
+                const auto& v0_out = va;
+                const auto& v1_out = (dot_val < 0) ? vc : vb;
+                const auto& v2_out = (dot_val < 0) ? vb : vc;
+
+                tri_shape.params[0] = static_cast<float>(v0_out.x());
+                tri_shape.params[1] = static_cast<float>(v0_out.y());
+                tri_shape.params[2] = static_cast<float>(v0_out.z());
+                tri_shape.params[4] = static_cast<float>(v1_out.x());
+                tri_shape.params[5] = static_cast<float>(v1_out.y());
+                tri_shape.params[6] = static_cast<float>(v1_out.z());
+                tri_shape.params[8] = static_cast<float>(v2_out.x());
+                tri_shape.params[9] = static_cast<float>(v2_out.y());
+                tri_shape.params[10] = static_cast<float>(v2_out.z());
+                tri_shape.material_index = mat_idx;
+                result.shapes.push_back(tri_shape);
+            }
+            continue;
+        }
+
+        GPUShape gpu_shape;
 
         if (!flatten_shape(inner_shape, gpu_shape, material_map, result.materials)) {
             continue;

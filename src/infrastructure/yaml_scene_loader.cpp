@@ -86,6 +86,7 @@ namespace {
 BodyType parse_body_type(const std::string& type_str) {
     if (type_str == "dynamic") return BodyType::DYNAMIC;
     if (type_str == "kinematic") return BodyType::KINEMATIC;
+    if (type_str == "soft") return BodyType::SOFT;
     return BodyType::STATIC;
 }
 
@@ -191,10 +192,27 @@ std::shared_ptr<Shape> create_shape(const std::string& type,
         ". Supported types: sphere, plane, box, cylinder, triangle, triangle_mesh");
 }
 
+SoftBodyDesc parse_soft_body_desc(const YAML::Node& obj_node, const Material* material) {
+    SoftBodyDesc desc;
+    desc.material = material;
+    if (obj_node["position"]) desc.position = parse_vec3(obj_node["position"]);
+    if (obj_node["grid_resolution"]) desc.grid_resolution = obj_node["grid_resolution"].as<int>();
+    if (obj_node["grid_spacing"]) desc.grid_spacing = obj_node["grid_spacing"].as<double>();
+    if (obj_node["pressure"]) desc.pressure = obj_node["pressure"].as<double>();
+    if (obj_node["restitution"]) desc.restitution = obj_node["restitution"].as<double>();
+    if (obj_node["friction"]) desc.friction = obj_node["friction"].as<double>();
+    if (obj_node["damping"]) desc.damping = obj_node["damping"].as<double>();
+    if (obj_node["solver_iterations"]) desc.solver_iterations = obj_node["solver_iterations"].as<int>();
+    if (obj_node["edge_compliance"]) desc.edge_compliance = obj_node["edge_compliance"].as<double>();
+    if (obj_node["volume_compliance"]) desc.volume_compliance = obj_node["volume_compliance"].as<double>();
+    return desc;
+}
+
 void parse_objects(const YAML::Node& objects_node,
                    const std::map<std::string, std::shared_ptr<Material>>& materials,
                    Scene& scene,
-                   std::vector<PhysicsProperties>& shape_physics) {
+                   std::vector<PhysicsProperties>& shape_physics,
+                   std::vector<SoftBodyDesc>& soft_body_descs) {
     if (!objects_node || !objects_node.IsSequence()) {
         return;
     }
@@ -205,6 +223,11 @@ void parse_objects(const YAML::Node& objects_node,
         auto it = materials.find(mat_ref);
         if (it == materials.end()) {
             throw std::runtime_error("Unknown material reference: " + mat_ref);
+        }
+
+        if (type == "soft_body_cube") {
+            soft_body_descs.push_back(parse_soft_body_desc(obj_node, it->second.get()));
+            continue;
         }
 
         scene.add_shape(create_shape(type, obj_node, it->second.get()));
@@ -263,14 +286,16 @@ SceneLoadResult YamlSceneLoader::load(const std::string& yaml_content) {
     YAML::Node root = YAML::Load(yaml_content);
     Scene scene;
     std::vector<PhysicsProperties> shape_physics;
+    std::vector<SoftBodyDesc> soft_body_descs;
 
-    parse_objects(root["objects"], materials, scene, shape_physics);
+    parse_objects(root["objects"], materials, scene, shape_physics, soft_body_descs);
     parse_lights(root["lights"], scene);
     Camera camera = parse_camera(root["camera"]);
     auto animation_config = parse_animation_config(root["animation"]);
 
     return SceneLoadResult(std::move(scene), std::move(camera), std::move(materials_storage),
-                           std::move(shape_physics), std::move(animation_config));
+                           std::move(shape_physics), std::move(animation_config),
+                           std::move(soft_body_descs));
 }
 
 } // namespace nwave

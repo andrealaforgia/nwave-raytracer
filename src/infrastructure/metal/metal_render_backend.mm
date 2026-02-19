@@ -108,6 +108,60 @@ std::vector<Color3> MetalRenderBackend::render(const Camera& camera,
         flat.shapes = std::move(reordered);
     }
 
+    // DIAGNOSTIC: dump shape/material/BVH statistics (first frame only)
+    static bool diag_done = false;
+    if (!diag_done) {
+        diag_done = true;
+        std::cerr << "[DIAG] shapes=" << flat.shapes.size()
+                  << " materials=" << flat.materials.size()
+                  << " lights=" << flat.lights.size()
+                  << " bvh_nodes=" << bvh_result.nodes.size() << "\n";
+        // Count shape types and material usage
+        int type_counts[5] = {};
+        int mat_usage[20] = {};
+        for (size_t i = 0; i < flat.shapes.size(); ++i) {
+            uint32_t st = flat.shapes[i].shape_type;
+            if (st < 5) type_counts[st]++;
+            uint32_t mi = flat.shapes[i].material_index;
+            if (mi < 20) mat_usage[mi]++;
+        }
+        std::cerr << "[DIAG] shape types: sphere=" << type_counts[0]
+                  << " plane=" << type_counts[1]
+                  << " box=" << type_counts[2]
+                  << " cylinder=" << type_counts[3]
+                  << " triangle=" << type_counts[4] << "\n";
+        for (size_t m = 0; m < flat.materials.size() && m < 20; ++m) {
+            std::cerr << "[DIAG] material[" << m << "] type=" << flat.materials[m].material_type
+                      << " albedo=(" << flat.materials[m].albedo[0] << ","
+                      << flat.materials[m].albedo[1] << "," << flat.materials[m].albedo[2]
+                      << ") param1=" << flat.materials[m].param1
+                      << " tint=(" << flat.materials[m].tint[0] << ","
+                      << flat.materials[m].tint[1] << "," << flat.materials[m].tint[2]
+                      << ") usage=" << mat_usage[m] << "\n";
+        }
+        // Dump root BVH node AABB
+        if (!bvh_result.nodes.empty()) {
+            const auto& root = bvh_result.nodes[0];
+            std::cerr << "[DIAG] BVH root AABB: ("
+                      << root.aabb_min[0] << "," << root.aabb_min[1] << "," << root.aabb_min[2]
+                      << ") -> (" << root.aabb_max[0] << "," << root.aabb_max[1] << "," << root.aabb_max[2]
+                      << ")\n";
+        }
+        // Check for triangles with large or NaN coords
+        int nan_count = 0, large_count = 0;
+        for (size_t i = 0; i < flat.shapes.size(); ++i) {
+            if (flat.shapes[i].shape_type == 4) { // TRIANGLE
+                for (int p = 0; p < 12; ++p) {
+                    float v = flat.shapes[i].params[p];
+                    if (std::isnan(v)) nan_count++;
+                    if (std::abs(v) > 100.0f) large_count++;
+                }
+            }
+        }
+        std::cerr << "[DIAG] Triangle NaN params=" << nan_count
+                  << " large params(>100)=" << large_count << "\n";
+    }
+
     return impl_->buffer_manager->dispatch_ray_trace(gpu_camera, flat, bvh_result.nodes);
 }
 

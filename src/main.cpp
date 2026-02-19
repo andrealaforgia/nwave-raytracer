@@ -324,7 +324,7 @@ static int run_physics_animate(const RenderCommand& cmd) {
     StreamProgressReporter progress(std::cerr);
     AnimationRenderer anim_renderer(anim_config, result.scene, result.shape_physics,
                                     std::move(physics), camera, std::move(write_cb),
-                                    &progress);
+                                    &progress, std::move(result.soft_body_descs));
     int frames_rendered = anim_renderer.render();
 
     std::cout << "Rendered " << frames_rendered << " frames to " << anim_config.output_directory << "\n";

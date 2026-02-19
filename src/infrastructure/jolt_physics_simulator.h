@@ -30,6 +30,10 @@ public:
     void set_gravity(const Vec3& gravity) override;
     void wake_all() override;
 
+    int add_soft_body(const SoftBodyDesc& desc) override;
+    bool is_soft_body(int body_id) const override;
+    SoftBodyMeshData get_soft_body_mesh(int body_id) const override;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

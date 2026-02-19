@@ -1,0 +1,124 @@
+# Jelly Cube Demo Scene
+# A pink jelly cube (soft body) falls onto the letter 'e' (dynamic boxes).
+# The 'e' boxes are asleep until woken by the animation, then scattered by impact.
+
+materials:
+  - name: ground_mat
+    type: lambertian
+    albedo: [0.5, 0.5, 0.5]
+  - name: pink_jelly
+    type: lambertian
+    albedo: [0.9, 0.4, 0.6]
+  - name: letter_mat
+    type: lambertian
+    albedo: [0.2, 0.6, 0.85]
+
+objects:
+  # === Ground plane (static) ===
+  - name: ground
+    type: box
+    min: [-10, -0.5, -10]
+    max: [10, 0.0, 10]
+    material: ground_mat
+    physics:
+      body_type: static
+
+  # === Letter 'e' boxes (dynamic, start_asleep) ===
+  # From create_letter_e: origin at (0,0,0) = bottom-left on ground (y=0).
+  # Height ~2.0, width ~1.5, depth ~0.4
+
+  # 1. Left vertical spine: x=0..0.3, y=0..2.0, z=0..0.4
+  - name: e_spine
+    type: box
+    min: [0.0, 0.0, 0.0]
+    max: [0.3, 2.0, 0.4]
+    material: letter_mat
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      friction: 0.5
+      restitution: 0.2
+      start_asleep: true
+
+  # 2. Top bar: x=0.3..1.5, y=1.8..2.0, z=0..0.4
+  - name: e_top
+    type: box
+    min: [0.3, 1.8, 0.0]
+    max: [1.5, 2.0, 0.4]
+    material: letter_mat
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      friction: 0.5
+      restitution: 0.2
+      start_asleep: true
+
+  # 3. Middle bar: x=0.3..1.5, y=0.9..1.1, z=0..0.4
+  - name: e_middle
+    type: box
+    min: [0.3, 0.9, 0.0]
+    max: [1.5, 1.1, 0.4]
+    material: letter_mat
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      friction: 0.5
+      restitution: 0.2
+      start_asleep: true
+
+  # 4. Bottom bar: x=0.3..1.5, y=0.0..0.2, z=0..0.4
+  - name: e_bottom
+    type: box
+    min: [0.3, 0.0, 0.0]
+    max: [1.5, 0.2, 0.4]
+    material: letter_mat
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      friction: 0.5
+      restitution: 0.2
+      start_asleep: true
+
+  # 5. Right-upper segment: x=1.2..1.5, y=1.1..1.8, z=0..0.4
+  - name: e_right_upper
+    type: box
+    min: [1.2, 1.1, 0.0]
+    max: [1.5, 1.8, 0.4]
+    material: letter_mat
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      friction: 0.5
+      restitution: 0.2
+      start_asleep: true
+
+  # === Pink jelly cube (soft body, above the 'e') ===
+  - type: soft_body_cube
+    material: pink_jelly
+    position: [0.75, 5.0, 0.2]
+    grid_resolution: 5
+    grid_spacing: 0.4
+    pressure: 2000.0
+    restitution: 0.3
+    friction: 0.3
+
+lights:
+  - type: point
+    position: [-3, 8, 5]
+    color: [1.0, 0.97, 0.9]
+    intensity: 0.8
+
+camera:
+  lookfrom: [4, 4, 6]
+  lookat: [0.75, 1.0, 0.2]
+  vup: [0, 1, 0]
+  vfov: 45
+  aspect_ratio: 1.77777
+  image_width: 800
+
+animation:
+  duration: 3.0
+  physics_timestep: 0.01667
+  render_fps: 30
+  wake_frame: 5
+  output_directory: "frames/jelly_demo/"

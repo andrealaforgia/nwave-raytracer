@@ -4,6 +4,8 @@
 #include "core/vec3.h"
 #include "core/quaternion.h"
 #include "domain/physics_properties.h"
+#include "domain/soft_body_desc.h"
+#include "domain/soft_body_mesh_data.h"
 
 namespace nwave {
 
@@ -36,6 +38,10 @@ public:
     virtual PhysicsTransform get_transform(int body_id) const = 0;
     virtual void set_gravity(const Vec3& gravity) = 0;
     virtual void wake_all() = 0;
+
+    virtual int add_soft_body(const SoftBodyDesc& desc) = 0;
+    virtual bool is_soft_body(int body_id) const = 0;
+    virtual SoftBodyMeshData get_soft_body_mesh(int body_id) const = 0;
 };
 
 } // namespace nwave

@@ -7,6 +7,7 @@
 #include "domain/scene.h"
 #include "domain/camera.h"
 #include "domain/physics_properties.h"
+#include "domain/soft_body_desc.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -27,7 +28,8 @@ public:
                       std::unique_ptr<PhysicsSimulator> physics,
                       const Camera& camera,
                       WriteCallback write_callback,
-                      ProgressReporter* progress = nullptr);
+                      ProgressReporter* progress = nullptr,
+                      std::vector<SoftBodyDesc> soft_body_descs = {});
 
     int render();
 
@@ -39,6 +41,7 @@ private:
     Camera camera_;
     WriteCallback write_callback_;
     ProgressReporter* progress_;
+    std::vector<SoftBodyDesc> soft_body_descs_;
 };
 
 } // namespace nwave

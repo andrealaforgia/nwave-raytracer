@@ -146,11 +146,12 @@ TEST_F(BVHFlattenerTest, SingleShapeProducesSingleLeafNode) {
     ASSERT_EQ(result.shape_order.size(), 1u);
     EXPECT_EQ(result.shape_order[0], 0u);
 
-    // Verify AABB matches the sphere bounds
-    EXPECT_FLOAT_EQ(result.nodes[0].aabb_min[0], 0.5f);  // 1.0 - 0.5
-    EXPECT_FLOAT_EQ(result.nodes[0].aabb_min[1], 1.5f);  // 2.0 - 0.5
-    EXPECT_FLOAT_EQ(result.nodes[0].aabb_min[2], 2.5f);  // 3.0 - 0.5
-    EXPECT_FLOAT_EQ(result.nodes[0].aabb_max[0], 1.5f);  // 1.0 + 0.5
-    EXPECT_FLOAT_EQ(result.nodes[0].aabb_max[1], 2.5f);  // 2.0 + 0.5
-    EXPECT_FLOAT_EQ(result.nodes[0].aabb_max[2], 3.5f);  // 3.0 + 0.5
+    // Verify AABB matches the sphere bounds (with 0.002 epsilon padding)
+    constexpr float EPS = 0.002f;
+    EXPECT_FLOAT_EQ(result.nodes[0].aabb_min[0], 0.5f - EPS);  // 1.0 - 0.5 - eps
+    EXPECT_FLOAT_EQ(result.nodes[0].aabb_min[1], 1.5f - EPS);  // 2.0 - 0.5 - eps
+    EXPECT_FLOAT_EQ(result.nodes[0].aabb_min[2], 2.5f - EPS);  // 3.0 - 0.5 - eps
+    EXPECT_FLOAT_EQ(result.nodes[0].aabb_max[0], 1.5f + EPS);  // 1.0 + 0.5 + eps
+    EXPECT_FLOAT_EQ(result.nodes[0].aabb_max[1], 2.5f + EPS);  // 2.0 + 0.5 + eps
+    EXPECT_FLOAT_EQ(result.nodes[0].aabb_max[2], 3.5f + EPS);  // 3.0 + 0.5 + eps
 }

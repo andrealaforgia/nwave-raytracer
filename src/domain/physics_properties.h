@@ -8,7 +8,8 @@ namespace nwave {
 enum class BodyType {
     STATIC,
     DYNAMIC,
-    KINEMATIC
+    KINEMATIC,
+    SOFT
 };
 
 struct PhysicsProperties {

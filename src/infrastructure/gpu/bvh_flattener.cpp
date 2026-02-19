@@ -26,6 +26,34 @@ struct BVHBuildNode {
     bool is_leaf() const { return prim_count > 0; }
 };
 
+// Transform a local-space AABB to world space using the forward transform
+// derived from the stored inverse transform (rigid body: rotation + translation).
+// inverse_transform is column-major: inv[col*4 + row] = matrix[row][col].
+// For rigid body inverse [R^T | -R^T*t], forward rotation R[i][j] = inv[i*4+j],
+// forward translation t[i] = -(R[i][0]*inv[12] + R[i][1]*inv[13] + R[i][2]*inv[14]).
+// Uses Arvo's method for efficient AABB transformation.
+AABB transform_aabb(const AABB& local, const float* inv) {
+    AABB world;
+    for (int i = 0; i < 3; ++i) {
+        float R0 = inv[i * 4 + 0];
+        float R1 = inv[i * 4 + 1];
+        float R2 = inv[i * 4 + 2];
+        float ti = -(R0 * inv[12] + R1 * inv[13] + R2 * inv[14]);
+        world.min[i] = ti;
+        world.max[i] = ti;
+        float e0 = R0 * local.min[0], f0 = R0 * local.max[0];
+        world.min[i] += std::fmin(e0, f0);
+        world.max[i] += std::fmax(e0, f0);
+        float e1 = R1 * local.min[1], f1 = R1 * local.max[1];
+        world.min[i] += std::fmin(e1, f1);
+        world.max[i] += std::fmax(e1, f1);
+        float e2 = R2 * local.min[2], f2 = R2 * local.max[2];
+        world.min[i] += std::fmin(e2, f2);
+        world.max[i] += std::fmax(e2, f2);
+    }
+    return world;
+}
+
 AABB compute_shape_aabb(const GPUShape& shape) {
     AABB aabb;
     auto type = static_cast<GPUShapeType>(shape.shape_type);
@@ -100,6 +128,19 @@ AABB compute_shape_aabb(const GPUShape& shape) {
             break;
         }
     }
+
+    if (shape.has_transform) {
+        aabb = transform_aabb(aabb, shape.inverse_transform);
+    }
+
+    // Pad AABBs slightly to prevent reflected/shadow rays from missing
+    // objects due to floating-point precision at grazing angles.
+    constexpr float AABB_EPSILON = 0.002f;
+    for (int i = 0; i < 3; ++i) {
+        aabb.min[i] -= AABB_EPSILON;
+        aabb.max[i] += AABB_EPSILON;
+    }
+
     return aabb;
 }
 

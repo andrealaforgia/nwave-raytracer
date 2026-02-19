@@ -10,6 +10,7 @@
 #include "domain/materials/lambertian.h"
 #include "domain/physics_properties.h"
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <regex>
 #include <thread>
@@ -35,6 +36,18 @@ public:
     }
     void set_gravity(const Vec3& /*gravity*/) override {}
     void wake_all() override {}
+
+    int add_soft_body(const SoftBodyDesc& /*desc*/) override {
+        throw std::runtime_error("not implemented");
+    }
+
+    bool is_soft_body(int /*body_id*/) const override {
+        return false;
+    }
+
+    SoftBodyMeshData get_soft_body_mesh(int /*body_id*/) const override {
+        throw std::runtime_error("not implemented");
+    }
 private:
     int next_id_ = 0;
     std::map<int, PhysicsTransform> transforms_;
