@@ -4,3 +4,18 @@ steps:
     tests: PASS
     timestamp: "2026-02-19"
     summary: "Added std::optional<int> wake_frame field to PhysicsProperties with default std::nullopt. Two unit tests: default is nullopt, assigned value stores correctly. All 332 tests pass."
+  - step_id: "01-02"
+    status: COMMIT
+    tests: PASS
+    timestamp: "2026-02-19"
+    summary: "Added pure virtual wake_body(int body_id) to PhysicsSimulator port. JoltPhysicsSimulator has throwing stub. FakePhysicsSimulator records calls in wake_body_calls vector. SoftBodyFakePhysics and FakePhysicsForProgress have empty overrides. All 332 tests pass."
+  - step_id: "02-03"
+    status: COMMIT
+    tests: PASS
+    timestamp: "2026-02-19"
+    summary: "Extended parse_physics() in yaml_scene_loader.cpp to read optional wake_frame integer from YAML physics block. Parametrized test covers wake_frame:60 and wake_frame:0; separate test covers absent wake_frame defaulting to nullopt. All 337 tests pass."
+  - step_id: "02-01"
+    status: COMMIT
+    tests: PASS
+    timestamp: "2026-02-19"
+    summary: "Widened initial_velocity condition in jolt_physics_simulator.cpp to include BodyType::KINEMATIC alongside DYNAMIC. Two integration tests: kinematic body moves at constant velocity unaffected by gravity, and kinematic body with zero velocity remains stationary. All 337 tests pass."

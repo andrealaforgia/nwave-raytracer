@@ -222,7 +222,7 @@ int JoltPhysicsSimulator::add_body(const PhysicsBodyDesc& desc) {
     body_settings.mRestitution = static_cast<float>(desc.properties.restitution);
     body_settings.mFriction = static_cast<float>(desc.properties.friction);
 
-    if (desc.properties.body_type == BodyType::DYNAMIC) {
+    if (desc.properties.body_type == BodyType::DYNAMIC || desc.properties.body_type == BodyType::KINEMATIC) {
         body_settings.mLinearVelocity = JPH::Vec3(
             static_cast<float>(desc.properties.initial_velocity.x()),
             static_cast<float>(desc.properties.initial_velocity.y()),
@@ -294,6 +294,10 @@ void JoltPhysicsSimulator::wake_all() {
             body_interface.ActivateBody(id);
         }
     }
+}
+
+void JoltPhysicsSimulator::wake_body(int /*body_id*/) {
+    throw std::runtime_error("not implemented");
 }
 
 int JoltPhysicsSimulator::add_soft_body(const SoftBodyDesc& desc) {

@@ -598,3 +598,94 @@ objects:
 
     EXPECT_FALSE(result.animation_config.has_value());
 }
+
+// --- wake_frame parsing tests (step 02-03) ---
+// Test Budget: 2 behaviors (wake_frame present, wake_frame absent) x 2 = 4 max. Using 2 tests.
+
+class YamlSceneLoaderWakeFrameParsingTest : public ::testing::Test {
+protected:
+    YamlSceneLoader loader;
+
+    static constexpr const char* minimal_scene_suffix = R"(
+lights:
+  - type: point
+    position: [0, 10, 0]
+    color: [1, 1, 1]
+    intensity: 1.0
+camera:
+  lookfrom: [0, 0, 5]
+  lookat: [0, 0, 0]
+  vup: [0, 1, 0]
+  vfov: 45
+  image_width: 640
+)";
+};
+
+struct WakeFrameTestCase {
+    int wake_frame_value;
+    std::string label;
+};
+
+class YamlSceneLoaderWakeFramePresentTest
+    : public YamlSceneLoaderWakeFrameParsingTest,
+      public ::testing::WithParamInterface<WakeFrameTestCase> {};
+
+TEST_P(YamlSceneLoaderWakeFramePresentTest, ParsesWakeFrameFromPhysicsBlock) {
+    auto [wake_frame_value, label] = GetParam();
+    const std::string yaml = std::string(R"(
+materials:
+  - name: ball
+    type: lambertian
+    albedo: [0.8, 0.2, 0.2]
+objects:
+  - type: sphere
+    center: [0, 5, 0]
+    radius: 0.5
+    material: ball
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      start_asleep: true
+      wake_frame: )") + std::to_string(wake_frame_value) + "\n" + minimal_scene_suffix;
+
+    auto result = loader.load(yaml);
+
+    ASSERT_EQ(result.shape_physics.size(), 1u);
+    ASSERT_TRUE(result.shape_physics[0].wake_frame.has_value());
+    EXPECT_EQ(result.shape_physics[0].wake_frame.value(), wake_frame_value);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    WakeFrameValues,
+    YamlSceneLoaderWakeFramePresentTest,
+    ::testing::Values(
+        WakeFrameTestCase{60, "typical_frame"},
+        WakeFrameTestCase{0, "zero_edge_case"}
+    ),
+    [](const ::testing::TestParamInfo<WakeFrameTestCase>& info) {
+        return info.param.label;
+    }
+);
+
+TEST_F(YamlSceneLoaderWakeFrameParsingTest, WakeFrameIsNulloptWhenOmittedFromPhysicsBlock) {
+    const std::string yaml = std::string(R"(
+materials:
+  - name: ball
+    type: lambertian
+    albedo: [0.8, 0.2, 0.2]
+objects:
+  - type: sphere
+    center: [0, 5, 0]
+    radius: 0.5
+    material: ball
+    physics:
+      body_type: dynamic
+      mass: 2.0
+      start_asleep: true
+)") + minimal_scene_suffix;
+
+    auto result = loader.load(yaml);
+
+    ASSERT_EQ(result.shape_physics.size(), 1u);
+    EXPECT_FALSE(result.shape_physics[0].wake_frame.has_value());
+}

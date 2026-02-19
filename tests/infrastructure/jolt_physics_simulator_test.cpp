@@ -202,3 +202,50 @@ TEST_F(JoltPhysicsSimulatorTest, sphere_velocity_changes_after_box_collision) {
     EXPECT_LT(sphere_transform.position.x(), free_travel_x)
         << "Sphere should travel less than free-travel distance due to energy transfer to box";
 }
+
+TEST_F(JoltPhysicsSimulatorTest, kinematic_body_moves_at_constant_velocity_unaffected_by_gravity) {
+    JoltPhysicsSimulator sim;
+    sim.set_gravity(Vec3(0.0, -9.81, 0.0));
+
+    // Kinematic sphere at y=5 with initial_velocity [0, 0, -3.44]
+    auto sphere_desc = make_sphere(0.5, Point3(0.0, 5.0, 0.0), BodyType::KINEMATIC);
+    sphere_desc.properties.initial_velocity = Vec3(0.0, 0.0, -3.44);
+    auto sphere_id = sim.add_body(sphere_desc);
+
+    const double dt = 1.0 / 60.0;
+    const int steps = 60;
+    for (int i = 0; i < steps; ++i) {
+        sim.step(dt);
+    }
+
+    auto transform = sim.get_transform(sphere_id);
+    double elapsed = dt * steps; // 1 second
+    double expected_z = -3.44 * elapsed; // -3.44
+
+    EXPECT_NEAR(transform.position.z(), expected_z, 0.1)
+        << "Kinematic body should move at constant velocity in Z";
+    EXPECT_NEAR(transform.position.y(), 5.0, 0.01)
+        << "Kinematic body should not be affected by gravity";
+}
+
+TEST_F(JoltPhysicsSimulatorTest, kinematic_body_with_zero_velocity_remains_stationary) {
+    JoltPhysicsSimulator sim;
+    sim.set_gravity(Vec3(0.0, -9.81, 0.0));
+
+    // Kinematic sphere at y=5 with zero initial_velocity (default)
+    auto sphere_desc = make_sphere(0.5, Point3(0.0, 5.0, 0.0), BodyType::KINEMATIC);
+    auto sphere_id = sim.add_body(sphere_desc);
+
+    const double dt = 1.0 / 60.0;
+    for (int i = 0; i < 60; ++i) {
+        sim.step(dt);
+    }
+
+    auto transform = sim.get_transform(sphere_id);
+    EXPECT_NEAR(transform.position.x(), 0.0, 0.01)
+        << "Kinematic body with zero velocity should not move in X";
+    EXPECT_NEAR(transform.position.y(), 5.0, 0.01)
+        << "Kinematic body with zero velocity should not move in Y";
+    EXPECT_NEAR(transform.position.z(), 0.0, 0.01)
+        << "Kinematic body with zero velocity should not move in Z";
+}

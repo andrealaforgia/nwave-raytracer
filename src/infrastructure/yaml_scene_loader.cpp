@@ -113,6 +113,9 @@ PhysicsProperties parse_physics(const YAML::Node& physics_node) {
     if (physics_node["start_asleep"]) {
         props.start_asleep = physics_node["start_asleep"].as<bool>();
     }
+    if (physics_node["wake_frame"]) {
+        props.wake_frame = physics_node["wake_frame"].as<int>();
+    }
     return props;
 }
 
