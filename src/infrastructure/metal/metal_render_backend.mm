@@ -51,6 +51,7 @@ GPUCamera pack_gpu_camera(const Camera& camera, const RenderSettings& settings) 
 struct MetalRenderBackend::Impl {
     std::unique_ptr<MetalDevice> device;
     std::unique_ptr<MetalBufferManager> buffer_manager;
+    SceneFlattener flattener;  // persistent across frames to cache materials/textures
 };
 
 MetalRenderBackend::MetalRenderBackend() = default;
@@ -91,8 +92,7 @@ std::vector<Color3> MetalRenderBackend::render(const Camera& camera,
     if (!impl_ || !impl_->buffer_manager) {
         return {};
     }
-    SceneFlattener flattener;
-    FlatScene flat = flattener.flatten(scene);
+    FlatScene flat = impl_->flattener.flatten(scene);
     GPUCamera gpu_camera = pack_gpu_camera(camera, settings);
 
     // Build BVH and reorder shapes for GPU traversal
@@ -160,6 +160,15 @@ std::vector<Color3> MetalRenderBackend::render(const Camera& camera,
         }
         std::cerr << "[DIAG] Triangle NaN params=" << nan_count
                   << " large params(>100)=" << large_count << "\n";
+        std::cerr << "[DIAG] texture_data size=" << flat.texture_data.size() << " bytes\n";
+        for (size_t m = 0; m < flat.materials.size() && m < 20; ++m) {
+            if (flat.materials[m].texture_offset >= 0) {
+                std::cerr << "[DIAG] material[" << m << "] has texture: offset="
+                          << flat.materials[m].texture_offset
+                          << " width=" << flat.materials[m].texture_width
+                          << " height=" << flat.materials[m].texture_height << "\n";
+            }
+        }
     }
 
     return impl_->buffer_manager->dispatch_ray_trace(gpu_camera, flat, bvh_result.nodes);

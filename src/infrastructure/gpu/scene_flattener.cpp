@@ -12,6 +12,7 @@
 #include "domain/materials/metal.h"
 #include "domain/materials/dielectric.h"
 #include "domain/materials/emissive.h"
+#include "domain/materials/image_texture.h"
 #include "domain/lights/point_light.h"
 #include "domain/lights/directional_light.h"
 #include <unordered_map>
@@ -32,6 +33,7 @@ uint32_t ensure_default_material(
     }
     GPUMaterial default_mat{};
     default_mat.material_type = static_cast<uint32_t>(GPUMaterialType::LAMBERTIAN);
+    default_mat.texture_offset = -1;
     default_mat.albedo[0] = 0.5f;
     default_mat.albedo[1] = 0.5f;
     default_mat.albedo[2] = 0.5f;
@@ -44,7 +46,8 @@ uint32_t ensure_default_material(
 uint32_t resolve_material_index(
     const Material* mat,
     std::unordered_map<const Material*, uint32_t>& material_map,
-    std::vector<GPUMaterial>& materials)
+    std::vector<GPUMaterial>& materials,
+    std::vector<uint8_t>& texture_data)
 {
     if (!mat) {
         std::cerr << "SceneFlattener: shape has null material, using default\n";
@@ -57,7 +60,21 @@ uint32_t resolve_material_index(
     }
 
     GPUMaterial gpu_mat{};
-    if (auto* lamb = dynamic_cast<const Lambertian*>(mat)) {
+    gpu_mat.texture_offset = -1;  // no texture by default
+
+    if (auto* img = dynamic_cast<const ImageTexture*>(mat)) {
+        gpu_mat.material_type = static_cast<uint32_t>(GPUMaterialType::LAMBERTIAN);
+        gpu_mat.albedo[0] = 1.0f;
+        gpu_mat.albedo[1] = 1.0f;
+        gpu_mat.albedo[2] = 1.0f;
+        // Append texture pixel data and record offset
+        gpu_mat.texture_offset = static_cast<int32_t>(texture_data.size());
+        gpu_mat.texture_width = static_cast<float>(img->width());
+        gpu_mat.texture_height = static_cast<float>(img->height());
+        gpu_mat.texture_scale = img->texture_scale();
+        texture_data.insert(texture_data.end(),
+                            img->pixels().begin(), img->pixels().end());
+    } else if (auto* lamb = dynamic_cast<const Lambertian*>(mat)) {
         gpu_mat.material_type = static_cast<uint32_t>(GPUMaterialType::LAMBERTIAN);
         gpu_mat.albedo[0] = static_cast<float>(lamb->albedo().r());
         gpu_mat.albedo[1] = static_cast<float>(lamb->albedo().g());
@@ -92,7 +109,8 @@ bool flatten_shape(
     const Shape* shape,
     GPUShape& gpu_shape,
     std::unordered_map<const Material*, uint32_t>& material_map,
-    std::vector<GPUMaterial>& materials)
+    std::vector<GPUMaterial>& materials,
+    std::vector<uint8_t>& texture_data)
 {
     std::memset(&gpu_shape, 0, sizeof(GPUShape));
 
@@ -102,7 +120,7 @@ bool flatten_shape(
         gpu_shape.params[1] = static_cast<float>(sphere->center().y());
         gpu_shape.params[2] = static_cast<float>(sphere->center().z());
         gpu_shape.params[3] = static_cast<float>(sphere->radius());
-        gpu_shape.material_index = resolve_material_index(sphere->material(), material_map, materials);
+        gpu_shape.material_index = resolve_material_index(sphere->material(), material_map, materials, texture_data);
     } else if (auto* plane = dynamic_cast<const Plane*>(shape)) {
         gpu_shape.shape_type = static_cast<uint32_t>(GPUShapeType::PLANE);
         gpu_shape.params[0] = static_cast<float>(plane->point().x());
@@ -111,7 +129,7 @@ bool flatten_shape(
         gpu_shape.params[4] = static_cast<float>(plane->normal().x());
         gpu_shape.params[5] = static_cast<float>(plane->normal().y());
         gpu_shape.params[6] = static_cast<float>(plane->normal().z());
-        gpu_shape.material_index = resolve_material_index(plane->material(), material_map, materials);
+        gpu_shape.material_index = resolve_material_index(plane->material(), material_map, materials, texture_data);
     } else if (auto* box = dynamic_cast<const Box*>(shape)) {
         gpu_shape.shape_type = static_cast<uint32_t>(GPUShapeType::BOX);
         gpu_shape.params[0] = static_cast<float>(box->box_min().x());
@@ -120,7 +138,7 @@ bool flatten_shape(
         gpu_shape.params[4] = static_cast<float>(box->box_max().x());
         gpu_shape.params[5] = static_cast<float>(box->box_max().y());
         gpu_shape.params[6] = static_cast<float>(box->box_max().z());
-        gpu_shape.material_index = resolve_material_index(box->material(), material_map, materials);
+        gpu_shape.material_index = resolve_material_index(box->material(), material_map, materials, texture_data);
     } else if (auto* cyl = dynamic_cast<const Cylinder*>(shape)) {
         gpu_shape.shape_type = static_cast<uint32_t>(GPUShapeType::CYLINDER);
         gpu_shape.params[0] = static_cast<float>(cyl->center().x());
@@ -131,7 +149,7 @@ bool flatten_shape(
         gpu_shape.params[5] = 1.0f;  // axis y (Y-axis aligned)
         gpu_shape.params[6] = 0.0f;  // axis z
         gpu_shape.params[7] = static_cast<float>(cyl->height() / 2.0);  // half_height
-        gpu_shape.material_index = resolve_material_index(cyl->material(), material_map, materials);
+        gpu_shape.material_index = resolve_material_index(cyl->material(), material_map, materials, texture_data);
     } else if (auto* tri = dynamic_cast<const Triangle*>(shape)) {
         gpu_shape.shape_type = static_cast<uint32_t>(GPUShapeType::TRIANGLE);
         gpu_shape.params[0] = static_cast<float>(tri->v0().x());
@@ -143,7 +161,7 @@ bool flatten_shape(
         gpu_shape.params[8] = static_cast<float>(tri->v2().x());
         gpu_shape.params[9] = static_cast<float>(tri->v2().y());
         gpu_shape.params[10] = static_cast<float>(tri->v2().z());
-        gpu_shape.material_index = resolve_material_index(tri->material(), material_map, materials);
+        gpu_shape.material_index = resolve_material_index(tri->material(), material_map, materials, texture_data);
     } else if (dynamic_cast<const TriangleMesh*>(shape)) {
         std::cerr << "SceneFlattener: TriangleMesh skipped (not yet supported for GPU)\n";
         return false;
@@ -157,9 +175,17 @@ bool flatten_shape(
 
 } // anonymous namespace
 
-FlatScene SceneFlattener::flatten(const Scene& scene) const {
+FlatScene SceneFlattener::flatten(const Scene& scene) {
     FlatScene result;
+
+    // Reuse cached materials and texture data from previous flatten calls.
+    // Materials and textures are static across animation frames.
     std::unordered_map<const Material*, uint32_t> material_map;
+    if (materials_cached_) {
+        material_map = cached_material_map_;
+        result.materials = cached_materials_;
+        result.texture_data = cached_texture_data_;
+    }
 
     for (const auto& shape_ptr : scene.shapes()) {
         const Shape* shape = shape_ptr.get();
@@ -173,7 +199,7 @@ FlatScene SceneFlattener::flatten(const Scene& scene) const {
         if (auto* dmesh = dynamic_cast<const DeformableMesh*>(inner_shape)) {
             const auto& verts = dmesh->vertices();
             const auto& faces = dmesh->face_indices();
-            uint32_t mat_idx = resolve_material_index(dmesh->material(), material_map, result.materials);
+            uint32_t mat_idx = resolve_material_index(dmesh->material(), material_map, result.materials, result.texture_data);
 
             // Compute mesh centroid from all vertices for outward-normal orientation
             double cx = 0, cy = 0, cz = 0;
@@ -229,7 +255,7 @@ FlatScene SceneFlattener::flatten(const Scene& scene) const {
 
         GPUShape gpu_shape;
 
-        if (!flatten_shape(inner_shape, gpu_shape, material_map, result.materials)) {
+        if (!flatten_shape(inner_shape, gpu_shape, material_map, result.materials, result.texture_data)) {
             continue;
         }
 
@@ -274,6 +300,13 @@ FlatScene SceneFlattener::flatten(const Scene& scene) const {
         }
 
         result.lights.push_back(gpu_light);
+    }
+
+    if (!materials_cached_) {
+        cached_material_map_ = material_map;
+        cached_materials_ = result.materials;
+        cached_texture_data_ = result.texture_data;
+        materials_cached_ = true;
     }
 
     return result;
