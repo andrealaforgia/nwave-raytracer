@@ -36,6 +36,10 @@ public:
     }
     void set_gravity(const Vec3& /*gravity*/) override {}
     void wake_all() override {}
+    void wake_body(int /*body_id*/) override {}
+    void set_linear_velocity(int /*body_id*/, const Vec3& /*velocity*/) override {}
+    void set_angular_velocity(int /*body_id*/, const Vec3& /*angular_velocity*/) override {}
+    void set_motion_type(int /*body_id*/, BodyType /*type*/) override {}
 
     int add_soft_body(const SoftBodyDesc& /*desc*/) override {
         throw std::runtime_error("not implemented");
@@ -129,12 +133,12 @@ TEST(ProgressReporterAcceptance, AnimationRendererCallsProgressReporter) {
     scene.add_shape(ground);
 
     std::vector<PhysicsProperties> physics_props;
-    physics_props.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0,0,0), 0.5, 0.3});
+    physics_props.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0,0,0), Vec3(0,0,0), 0.5, 0.3});
 
     Camera camera(Point3(0, 0, 5), Point3(0, 0, 0), Vec3(0, 1, 0), 60.0, 1.0, 100);
     auto physics = std::make_unique<FakePhysicsForProgress>();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     std::ostringstream output;
     auto reporter = std::make_shared<StreamProgressReporter>(output);

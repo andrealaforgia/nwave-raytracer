@@ -2,6 +2,7 @@
 #include "infrastructure/metal/metal_device.h"
 
 #import <Metal/Metal.h>
+#include <iostream>
 
 namespace nwave {
 
@@ -290,7 +291,7 @@ std::vector<Color3> MetalBufferManager::dispatch_ray_trace(
         return {};
     }
 
-    // Reuse texture buffer across frames (texture data is static)
+    // Reuse texture buffer across frames; invalidate when texture data size changes
     NSUInteger tex_size = scene.texture_data.empty() ? 1 : scene.texture_data.size();
     if (!impl_->cached_texture_buffer || impl_->cached_texture_size != tex_size) {
         impl_->cached_texture_buffer = scene.texture_data.empty()
@@ -344,26 +345,51 @@ std::vector<Color3> MetalBufferManager::dispatch_ray_trace(
             static_cast<uint32_t>(bvh_nodes.size())
         };
 
-        id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
-        id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
-
-        [encoder setComputePipelineState:pipeline];
-        [encoder setBytes:&camera length:sizeof(GPUCamera) atIndex:0];
-        [encoder setBuffer:impl_->cached_output_buffer offset:0 atIndex:1];
-        [encoder setBuffer:shapes_buffer offset:0 atIndex:2];
-        [encoder setBuffer:materials_buffer offset:0 atIndex:3];
-        [encoder setBuffer:lights_buffer offset:0 atIndex:4];
-        [encoder setBytes:scene_counts length:sizeof(scene_counts) atIndex:5];
-        [encoder setBuffer:bvh_buffer offset:0 atIndex:6];
-        [encoder setBuffer:impl_->cached_texture_buffer offset:0 atIndex:7];
-
         MTLSize threadgroup_size = MTLSizeMake(16, 16, 1);
         MTLSize grid_size = MTLSizeMake(width, height, 1);
 
-        [encoder dispatchThreads:grid_size threadsPerThreadgroup:threadgroup_size];
-        [encoder endEncoding];
-        [command_buffer commit];
-        [command_buffer waitUntilCompleted];
+        // SPP batching: split large SPP into batches of 32 to avoid GPU thermal overload
+        constexpr uint32_t MAX_BATCH_SPP = 32;
+        uint32_t total_spp = camera.samples_per_pixel;
+        uint32_t num_batches = (total_spp + MAX_BATCH_SPP - 1) / MAX_BATCH_SPP;
+        if (num_batches < 1) num_batches = 1;
+
+        GPUCamera batch_camera = camera;
+        batch_camera.num_batches = num_batches;
+
+        for (uint32_t batch = 0; batch < num_batches; ++batch) {
+            uint32_t remaining = total_spp - batch * MAX_BATCH_SPP;
+            uint32_t batch_spp = (remaining < MAX_BATCH_SPP) ? remaining : MAX_BATCH_SPP;
+
+            batch_camera.batch_index = batch;
+            batch_camera.samples_per_pixel = batch_spp;
+
+            id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBytes:&batch_camera length:sizeof(GPUCamera) atIndex:0];
+            [encoder setBuffer:impl_->cached_output_buffer offset:0 atIndex:1];
+            [encoder setBuffer:shapes_buffer offset:0 atIndex:2];
+            [encoder setBuffer:materials_buffer offset:0 atIndex:3];
+            [encoder setBuffer:lights_buffer offset:0 atIndex:4];
+            [encoder setBytes:scene_counts length:sizeof(scene_counts) atIndex:5];
+            [encoder setBuffer:bvh_buffer offset:0 atIndex:6];
+            [encoder setBuffer:impl_->cached_texture_buffer offset:0 atIndex:7];
+
+            [encoder dispatchThreads:grid_size threadsPerThreadgroup:threadgroup_size];
+            [encoder endEncoding];
+            [command_buffer commit];
+            [command_buffer waitUntilCompleted];
+
+            // Check for GPU errors after each batch
+            if ([command_buffer status] == MTLCommandBufferStatusError) {
+                NSError* error = [command_buffer error];
+                std::cerr << "Metal GPU error in batch " << batch << "/" << num_batches
+                          << ": " << [[error localizedDescription] UTF8String] << "\n";
+                return {};
+            }
+        }
 
         // Read back float4 data and convert to Color3
         const float* raw = static_cast<const float*>([impl_->cached_output_buffer contents]);

@@ -3,6 +3,7 @@
 #include "domain/materials/lambertian.h"
 #include "domain/materials/metal.h"
 #include "domain/materials/dielectric.h"
+#include "domain/materials/image_texture.h"
 #include "domain/shapes/sphere.h"
 #include "domain/shapes/plane.h"
 #include "domain/shapes/box.h"
@@ -688,4 +689,29 @@ objects:
 
     ASSERT_EQ(result.shape_physics.size(), 1u);
     EXPECT_FALSE(result.shape_physics[0].wake_frame.has_value());
+}
+
+// --- Procedural texture sampling mode test ---
+// Test Budget: 1 behavior (procedural texture uses equirectangular sampling) x 2 = 2 max. Using 1 test.
+
+TEST_F(YamlSceneLoaderMaterialsTest, ProceduralTextureUsesEquirectangularSampling) {
+    const std::string yaml = R"(
+materials:
+  - name: marble_ball
+    type: procedural_texture
+    pattern: marble
+    width: 1024
+    height: 512
+    seed: 42
+)";
+
+    auto materials = loader.parse_materials(yaml);
+
+    ASSERT_EQ(materials.count("marble_ball"), 1);
+    auto* img = dynamic_cast<ImageTexture*>(materials.at("marble_ball").get());
+    ASSERT_NE(img, nullptr);
+    // Procedural textures use default texture_scale (0.0f) for equirectangular
+    // sampling, which correctly reflects sphere rotation via object-space UV.
+    // The cube_map path (texture_scale = -1.0f) doesn't rotate with the sphere.
+    EXPECT_FLOAT_EQ(img->texture_scale(), 0.0f);
 }

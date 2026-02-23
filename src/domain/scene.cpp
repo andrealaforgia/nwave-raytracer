@@ -10,6 +10,18 @@ void Scene::add_light(std::shared_ptr<Light> light) {
     lights_.push_back(std::move(light));
 }
 
+void Scene::clear_lights() {
+    lights_.clear();
+}
+
+void Scene::clear_shapes() {
+    shapes_.clear();
+}
+
+void Scene::set_lights(std::vector<std::shared_ptr<Light>> lights) {
+    lights_ = std::move(lights);
+}
+
 bool Scene::hit(const Ray& ray, double t_min, double t_max, HitRecord& rec) const {
     HitRecord temp_rec;
     bool hit_anything = false;

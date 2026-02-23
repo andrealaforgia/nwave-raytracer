@@ -29,6 +29,10 @@ public:
     PhysicsTransform get_transform(int body_id) const override;
     void set_gravity(const Vec3& gravity) override;
     void wake_all() override;
+    void wake_body(int body_id) override;
+    void set_linear_velocity(int body_id, const Vec3& velocity) override;
+    void set_angular_velocity(int body_id, const Vec3& angular_velocity) override;
+    void set_motion_type(int body_id, BodyType type) override;
 
     int add_soft_body(const SoftBodyDesc& desc) override;
     bool is_soft_body(int body_id) const override;

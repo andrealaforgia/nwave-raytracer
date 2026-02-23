@@ -2,6 +2,8 @@
 #include "domain/materials/lambertian.h"
 #include "domain/materials/metal.h"
 #include "domain/materials/dielectric.h"
+#include "domain/materials/image_texture.h"
+#include "domain/materials/procedural_texture.h"
 #include "domain/shapes/sphere.h"
 #include "domain/shapes/plane.h"
 #include "domain/shapes/box.h"
@@ -11,6 +13,7 @@
 #include "domain/lights/point_light.h"
 #include "domain/lights/directional_light.h"
 #include "domain/materials/emissive.h"
+#include "domain/materials/checker_metal.h"
 #include <yaml-cpp/yaml.h>
 #include <stdexcept>
 
@@ -71,6 +74,37 @@ std::map<std::string, std::shared_ptr<Material>> YamlSceneLoader::parse_material
             material = create_dielectric(mat_node);
         } else if (type == "emissive") {
             material = create_emissive(mat_node);
+        } else if (type == "checker_metal") {
+            auto a = parse_vec3(mat_node["color_a"]);
+            auto b = parse_vec3(mat_node["color_b"]);
+            double fuzz = mat_node["fuzz"] ? mat_node["fuzz"].as<double>() : 0.0;
+            double scale = mat_node["scale"] ? mat_node["scale"].as<double>() : 1.0;
+            material = std::make_shared<CheckerMetal>(
+                Color3(a[0], a[1], a[2]), Color3(b[0], b[1], b[2]), fuzz, scale);
+        } else if (type == "image_texture") {
+            std::string path = mat_node["texture"].as<std::string>();
+            material = ImageTexture::load_from_file(path);
+            if (mat_node["texture_scale"]) {
+                auto* img = dynamic_cast<ImageTexture*>(material.get());
+                if (img) img->set_texture_scale(mat_node["texture_scale"].as<float>());
+            }
+            if (mat_node["texture_mapping"]) {
+                std::string mapping = mat_node["texture_mapping"].as<std::string>();
+                if (mapping == "cube_map") {
+                    auto* img = dynamic_cast<ImageTexture*>(material.get());
+                    if (img) img->set_texture_scale(-1.0f);
+                }
+            }
+        } else if (type == "procedural_texture") {
+            std::string pattern_name = mat_node["pattern"].as<std::string>();
+            int width = mat_node["width"] ? mat_node["width"].as<int>() : 1024;
+            int height = mat_node["height"] ? mat_node["height"].as<int>() : 512;
+            uint32_t seed = mat_node["seed"] ? mat_node["seed"].as<uint32_t>() : 42;
+            auto pattern = pattern_from_string(pattern_name);
+            material = ProceduralTexture::generate(pattern, width, height, seed);
+            // ProceduralTexture::generate() sets texture_scale = -1.0f to route
+            // through the cube_map sampling path, which avoids the atan2 polar
+            // singularity and equirectangular seam artifacts.
         } else {
             throw std::runtime_error("Unknown material type: " + type);
         }
@@ -104,6 +138,9 @@ PhysicsProperties parse_physics(const YAML::Node& physics_node) {
     if (physics_node["initial_velocity"]) {
         props.initial_velocity = parse_vec3(physics_node["initial_velocity"]);
     }
+    if (physics_node["initial_angular_velocity"]) {
+        props.initial_angular_velocity = parse_vec3(physics_node["initial_angular_velocity"]);
+    }
     if (physics_node["friction"]) {
         props.friction = physics_node["friction"].as<double>();
     }
@@ -132,6 +169,16 @@ std::optional<AnimationConfig> parse_animation_config(const YAML::Node& anim_nod
     }
     if (anim_node["wake_frame"]) {
         config.wake_frame = anim_node["wake_frame"].as<int>();
+    }
+    if (anim_node["finale"] && anim_node["finale"].IsMap()) {
+        const auto& fin = anim_node["finale"];
+        config.finale.enabled = true;
+        if (fin["start_frame"]) config.finale.start_frame = fin["start_frame"].as<int>();
+        if (fin["earth_texture"]) config.finale.earth_texture_path = fin["earth_texture"].as<std::string>();
+        if (fin["earth_radius"]) config.finale.earth_radius = fin["earth_radius"].as<double>();
+        if (fin["earth_tilt"]) config.finale.earth_tilt_degrees = fin["earth_tilt"].as<double>();
+        if (fin["moon_radius_ratio"]) config.finale.moon_radius_ratio = fin["moon_radius_ratio"].as<double>();
+        if (fin["moon_texture"]) config.finale.moon_texture_path = fin["moon_texture"].as<std::string>();
     }
     return config;
 }
@@ -200,6 +247,7 @@ SoftBodyDesc parse_soft_body_desc(const YAML::Node& obj_node, const Material* ma
     desc.material = material;
     if (obj_node["position"]) desc.position = parse_vec3(obj_node["position"]);
     if (obj_node["grid_resolution"]) desc.grid_resolution = obj_node["grid_resolution"].as<int>();
+    if (obj_node["grid_resolution_y"]) desc.grid_resolution_y = obj_node["grid_resolution_y"].as<int>();
     if (obj_node["grid_spacing"]) desc.grid_spacing = obj_node["grid_spacing"].as<double>();
     if (obj_node["pressure"]) desc.pressure = obj_node["pressure"].as<double>();
     if (obj_node["restitution"]) desc.restitution = obj_node["restitution"].as<double>();
@@ -208,6 +256,7 @@ SoftBodyDesc parse_soft_body_desc(const YAML::Node& obj_node, const Material* ma
     if (obj_node["solver_iterations"]) desc.solver_iterations = obj_node["solver_iterations"].as<int>();
     if (obj_node["edge_compliance"]) desc.edge_compliance = obj_node["edge_compliance"].as<double>();
     if (obj_node["volume_compliance"]) desc.volume_compliance = obj_node["volume_compliance"].as<double>();
+    if (obj_node["start_frame"]) desc.start_frame = obj_node["start_frame"].as<int>();
     return desc;
 }
 
@@ -234,7 +283,11 @@ void parse_objects(const YAML::Node& objects_node,
         }
 
         scene.add_shape(create_shape(type, obj_node, it->second.get()));
-        shape_physics.push_back(parse_physics(obj_node["physics"]));
+        PhysicsProperties props = parse_physics(obj_node["physics"]);
+        if (obj_node["name"]) {
+            props.name = obj_node["name"].as<std::string>();
+        }
+        shape_physics.push_back(props);
     }
 }
 

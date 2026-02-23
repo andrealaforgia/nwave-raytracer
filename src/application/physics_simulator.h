@@ -38,6 +38,10 @@ public:
     virtual PhysicsTransform get_transform(int body_id) const = 0;
     virtual void set_gravity(const Vec3& gravity) = 0;
     virtual void wake_all() = 0;
+    virtual void wake_body(int body_id) = 0;
+    virtual void set_linear_velocity(int body_id, const Vec3& velocity) = 0;
+    virtual void set_angular_velocity(int body_id, const Vec3& angular_velocity) = 0;
+    virtual void set_motion_type(int body_id, BodyType type) = 0;
 
     virtual int add_soft_body(const SoftBodyDesc& desc) = 0;
     virtual bool is_soft_body(int body_id) const = 0;

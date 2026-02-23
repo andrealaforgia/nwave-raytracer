@@ -57,6 +57,10 @@ public:
 
     void set_gravity(const Vec3&) override {}
     void wake_all() override {}
+    void wake_body(int /*body_id*/) override {}
+    void set_linear_velocity(int /*body_id*/, const Vec3& /*velocity*/) override {}
+    void set_angular_velocity(int /*body_id*/, const Vec3& /*angular_velocity*/) override {}
+    void set_motion_type(int /*body_id*/, BodyType /*type*/) override {}
 
     // Soft body support
     int add_soft_body(const SoftBodyDesc& desc) override {
@@ -134,7 +138,7 @@ TEST(AnimationRendererSoftBodyAcceptance, RendersSoftBodyAlongsideRigidBodies) {
     auto ground = std::make_shared<Plane>(Point3(0, -2, 0), Vec3(0, 1, 0), mat.get());
     scene.add_shape(ground);
     std::vector<PhysicsProperties> shape_physics;
-    shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+    shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     // Soft body
     auto soft_mat = std::make_shared<Lambertian>(Vec3(0.8, 0.2, 0.2));
@@ -149,7 +153,7 @@ TEST(AnimationRendererSoftBodyAcceptance, RendersSoftBodyAlongsideRigidBodies) {
     // Track rendered scenes - capture shape count each frame
     std::vector<int> shapes_per_frame;
     auto write_cb = [&](const std::string& filename, const Scene& s,
-                        const Camera&, int, int) {
+                        const Camera&, int, const RenderSettings&) {
         shapes_per_frame.push_back(static_cast<int>(s.shapes().size()));
     };
 
@@ -208,7 +212,7 @@ TEST(AnimationRendererSoftBody, RegistersSoftBodiesWithPhysicsSimulator) {
     auto physics = std::make_unique<SoftBodyFakePhysics>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, scene, shape_physics,
                                std::move(physics), make_test_camera(), write_cb,
@@ -238,7 +242,7 @@ TEST(AnimationRendererSoftBody, UpdatesSoftBodyMeshVerticesEachFrame) {
     auto physics = std::make_unique<SoftBodyFakePhysics>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, scene, shape_physics,
                                std::move(physics), make_test_camera(), write_cb,
@@ -274,7 +278,7 @@ TEST(AnimationRendererSoftBody, Frame0RendersSoftBodyBeforePhysicsStep) {
 
     // Track step count at each render call
     std::vector<int> steps_at_render;
-    auto write_cb = [&](const std::string&, const Scene&, const Camera&, int, int) {
+    auto write_cb = [&](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {
         steps_at_render.push_back(physics_ptr->step_count_);
     };
 
@@ -299,14 +303,14 @@ TEST(AnimationRendererSoftBody, EmptySoftBodyListLeavesRigidPathUnchanged) {
     auto sphere = std::make_shared<Sphere>(Point3(0, 0, 0), 1.0, mat.get());
     scene.add_shape(sphere);
     std::vector<PhysicsProperties> shape_physics;
-    shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+    shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     auto physics = std::make_unique<SoftBodyFakePhysics>();
     auto* physics_ptr = physics.get();
 
     std::vector<std::string> filenames;
     auto write_cb = [&](const std::string& filename, const Scene& s,
-                        const Camera&, int, int) {
+                        const Camera&, int, const RenderSettings&) {
         filenames.push_back(filename);
     };
 

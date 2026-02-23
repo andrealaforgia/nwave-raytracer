@@ -13,6 +13,7 @@
 #include "domain/materials/dielectric.h"
 #include "domain/materials/emissive.h"
 #include "domain/materials/image_texture.h"
+#include "domain/materials/checker_metal.h"
 #include "domain/lights/point_light.h"
 #include "domain/lights/directional_light.h"
 #include <unordered_map>
@@ -97,6 +98,16 @@ uint32_t resolve_material_index(
         gpu_mat.albedo[1] = static_cast<float>(emis->color().g());
         gpu_mat.albedo[2] = static_cast<float>(emis->color().b());
         gpu_mat.param1 = static_cast<float>(emis->intensity());
+    } else if (auto* cm = dynamic_cast<const CheckerMetal*>(mat)) {
+        gpu_mat.material_type = static_cast<uint32_t>(GPUMaterialType::CHECKER_METAL);
+        gpu_mat.albedo[0] = static_cast<float>(cm->color_a().r());
+        gpu_mat.albedo[1] = static_cast<float>(cm->color_a().g());
+        gpu_mat.albedo[2] = static_cast<float>(cm->color_a().b());
+        gpu_mat.tint[0] = static_cast<float>(cm->color_b().r());
+        gpu_mat.tint[1] = static_cast<float>(cm->color_b().g());
+        gpu_mat.tint[2] = static_cast<float>(cm->color_b().b());
+        gpu_mat.param1 = static_cast<float>(cm->fuzziness());
+        gpu_mat.texture_scale = static_cast<float>(cm->scale());
     }
 
     uint32_t index = static_cast<uint32_t>(materials.size());
@@ -287,9 +298,9 @@ FlatScene SceneFlattener::flatten(const Scene& scene) {
             gpu_light.intensity = static_cast<float>(point->intensity());
         } else if (auto* dir = dynamic_cast<const DirectionalLight*>(light_ptr.get())) {
             gpu_light.light_type = static_cast<uint32_t>(GPULightType::DIRECTIONAL);
-            gpu_light.position[0] = static_cast<float>(dir->direction().x());
-            gpu_light.position[1] = static_cast<float>(dir->direction().y());
-            gpu_light.position[2] = static_cast<float>(dir->direction().z());
+            gpu_light.position[0] = static_cast<float>(-dir->direction().x());
+            gpu_light.position[1] = static_cast<float>(-dir->direction().y());
+            gpu_light.position[2] = static_cast<float>(-dir->direction().z());
             gpu_light.color[0] = static_cast<float>(dir->color().r());
             gpu_light.color[1] = static_cast<float>(dir->color().g());
             gpu_light.color[2] = static_cast<float>(dir->color().b());
@@ -302,12 +313,11 @@ FlatScene SceneFlattener::flatten(const Scene& scene) {
         result.lights.push_back(gpu_light);
     }
 
-    if (!materials_cached_) {
-        cached_material_map_ = material_map;
-        cached_materials_ = result.materials;
-        cached_texture_data_ = result.texture_data;
-        materials_cached_ = true;
-    }
+    // Always update cache (handles new materials added mid-animation, e.g., finale)
+    cached_material_map_ = material_map;
+    cached_materials_ = result.materials;
+    cached_texture_data_ = result.texture_data;
+    materials_cached_ = true;
 
     return result;
 }

@@ -14,6 +14,9 @@ class Scene {
 public:
     void add_shape(std::shared_ptr<Shape> shape);
     void add_light(std::shared_ptr<Light> light);
+    void clear_lights();
+    void clear_shapes();
+    void set_lights(std::vector<std::shared_ptr<Light>> lights);
 
     bool hit(const Ray& ray, double t_min, double t_max, HitRecord& rec) const;
 

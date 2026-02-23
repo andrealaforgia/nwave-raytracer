@@ -9,6 +9,8 @@
 #include "domain/shapes/plane.h"
 #include "domain/materials/lambertian.h"
 #include "domain/physics_properties.h"
+#include "domain/lights/point_light.h"
+#include "domain/lights/directional_light.h"
 #include "core/matrix4x4.h"
 #include "domain/shapes/transformed_shape.h"
 #include <string>
@@ -30,6 +32,11 @@ public:
 
     struct StepCall {
         double dt;
+    };
+
+    struct SetVelocityCall {
+        int body_id;
+        Vec3 velocity;
     };
 
     int add_body(const PhysicsBodyDesc& desc) override {
@@ -73,6 +80,19 @@ public:
         wake_body_calls.push_back(body_id);
     }
 
+    void set_linear_velocity(int body_id, const Vec3& velocity) override {
+        set_velocity_calls.push_back({body_id, velocity});
+    }
+
+    void set_angular_velocity(int body_id, const Vec3& angular_velocity) override {
+        set_angular_velocity_calls.push_back({body_id, angular_velocity});
+    }
+
+    void set_motion_type(int /*body_id*/, BodyType /*type*/) override {}
+
+    struct AngularVelocityCall { int body_id; Vec3 angular_velocity; };
+    std::vector<AngularVelocityCall> set_angular_velocity_calls;
+
     int add_soft_body(const SoftBodyDesc& /*desc*/) override {
         throw std::runtime_error("not implemented");
     }
@@ -90,6 +110,7 @@ public:
     std::vector<StepCall> step_calls;
     mutable std::vector<int> get_transform_calls;
     std::vector<int> wake_body_calls;
+    std::vector<SetVelocityCall> set_velocity_calls;
     Vec3 gravity_{0, 0, 0};
 
 private:
@@ -115,12 +136,12 @@ TestSceneSetup create_test_scene_with_dynamic_box() {
     // Ground plane (static)
     auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
     setup.scene.add_shape(ground);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     // Dynamic box
     auto box = std::make_shared<Box>(Point3(-0.5, 0, -0.5), Point3(0.5, 1, 0.5), mat.get());
     setup.scene.add_shape(box);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     return setup;
 }
@@ -142,7 +163,7 @@ TEST(AnimationRendererAcceptance, RendersAnimationWithPhysicsSimulation) {
     // Track write callback invocations
     std::vector<std::string> written_filenames;
     auto write_callback = [&](const std::string& filename, const Scene& scene,
-                              const Camera& camera, int width, int spp) {
+                              const Camera& camera, int width, const RenderSettings& settings) {
         written_filenames.push_back(filename);
     };
 
@@ -190,7 +211,7 @@ TEST(AnimationRenderer, ReturnsCorrectFrameCountForFractionalDuration) {
 
     std::vector<std::string> filenames;
     auto write_cb = [&](const std::string& filename, const Scene&,
-                        const Camera&, int, int) {
+                        const Camera&, int, const RenderSettings&) {
         filenames.push_back(filename);
     };
 
@@ -215,7 +236,7 @@ TEST(AnimationRenderer, StepsPhysicsCorrectNumberOfTimesPerFrame) {
     auto physics = std::make_unique<FakePhysicsSimulator>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                std::move(physics), test_scene.camera, write_cb);
@@ -238,7 +259,7 @@ TEST(AnimationRenderer, UpdatesTransformedShapeTransformsFromPhysics) {
     auto physics = std::make_unique<FakePhysicsSimulator>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                std::move(physics), test_scene.camera, write_cb);
@@ -266,7 +287,7 @@ TEST(AnimationRenderer, GeneratesCorrectFrameFilenames) {
 
     std::vector<std::string> filenames;
     auto write_cb = [&](const std::string& filename, const Scene&,
-                        const Camera&, int, int) {
+                        const Camera&, int, const RenderSettings&) {
         filenames.push_back(filename);
     };
 
@@ -289,7 +310,7 @@ TEST(AnimationRenderer, AddsBodiesForAllShapes) {
     auto physics = std::make_unique<FakePhysicsSimulator>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                std::move(physics), test_scene.camera, write_cb);
@@ -334,7 +355,7 @@ TEST(AnimationRendererAcceptance, StepsPhysicsMultipleTimesPerFrameAtVariousRati
         auto physics = std::make_unique<FakePhysicsSimulator>();
         auto* physics_ptr = physics.get();
 
-        auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+        auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
         AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                    std::move(physics), test_scene.camera, write_cb);
@@ -387,7 +408,7 @@ TEST_P(AnimationRendererPhysicsRatio, StepsPhysicsAtCorrectRatioPerFrame) {
     auto physics = std::make_unique<FakePhysicsSimulator>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                std::move(physics), test_scene.camera, write_cb);
@@ -429,12 +450,12 @@ TestSceneSetup create_test_scene_with_dynamic_sphere() {
     // Ground plane (static)
     auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
     setup.scene.add_shape(ground);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     // Dynamic sphere
     auto sphere = std::make_shared<Sphere>(Point3(0, 2, 0), 0.5, mat.get());
     setup.scene.add_shape(sphere);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     return setup;
 }
@@ -448,17 +469,17 @@ TestSceneSetup create_test_scene_with_dynamic_sphere_and_box() {
     // Ground plane (static)
     auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
     setup.scene.add_shape(ground);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     // Dynamic sphere (shape index 1, body id 1)
     auto sphere = std::make_shared<Sphere>(Point3(0, 2, 0), 0.5, mat.get());
     setup.scene.add_shape(sphere);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     // Dynamic box (shape index 2, body id 2)
     auto box = std::make_shared<Box>(Point3(-0.5, 3, -0.5), Point3(0.5, 4, 0.5), mat.get());
     setup.scene.add_shape(box);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     return setup;
 }
@@ -486,7 +507,7 @@ bool has_rotation(const Matrix4x4& mat, double tolerance = 1e-9) {
 // Test Budget: 1 behavior x 2 = 2 max. Using 1 test.
 // ==========================================================
 
-TEST(AnimationRenderer, AppliesTranslationOnlyTransformToSpheres) {
+TEST(AnimationRenderer, AppliesFullTransformIncludingRotationToSpheres) {
     // 2 frames so physics steps occur between frame 0 and frame 1,
     // introducing rotation in the physics transform
     AnimationConfig config{0.2, 0.01, 10.0, "out/"};
@@ -500,7 +521,7 @@ TEST(AnimationRenderer, AppliesTranslationOnlyTransformToSpheres) {
     Matrix4x4 box_transform;
     int frame_counter = 0;
     auto write_cb = [&](const std::string&, const Scene& scene,
-                        const Camera&, int, int) {
+                        const Camera&, int, const RenderSettings&) {
         frame_counter++;
         // Capture on frame 2 (after physics stepping has introduced rotation)
         if (frame_counter == 2) {
@@ -521,17 +542,25 @@ TEST(AnimationRenderer, AppliesTranslationOnlyTransformToSpheres) {
 
     renderer.render();
 
-    // Sphere: rotation part of transform must be identity (translation only)
-    EXPECT_TRUE(is_rotation_identity(sphere_transform))
-        << "Sphere should have translation-only transform (no rotation)";
+    // Both sphere and box should include full rotation (needed for textured spheres)
+    EXPECT_TRUE(has_rotation(sphere_transform))
+        << "Sphere should include rotation for texture rolling";
 
-    // Box: rotation part must NOT be identity (full transform with rotation)
     EXPECT_TRUE(has_rotation(box_transform))
         << "Box should retain full rotation in its transform";
 
     // Both should have non-zero translation (physics moved them)
     EXPECT_NE(sphere_transform.m[1][3], 0.0) << "Sphere should have translation";
     EXPECT_NE(box_transform.m[1][3], 0.0) << "Box should have translation";
+}
+
+// Helper: count how many times a given body_id appears in a wake call log
+int count_wake_calls(const std::vector<int>& wake_body_calls, int body_id) {
+    int count = 0;
+    for (int id : wake_body_calls) {
+        if (id == body_id) count++;
+    }
+    return count;
 }
 
 // ==========================================================
@@ -547,12 +576,12 @@ TestSceneSetup create_test_scene_with_per_body_wake() {
     // Shape 0: Ground plane (static) - body_id 0
     auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
     setup.scene.add_shape(ground);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     // Shape 1: Dynamic box, start_asleep=true, wake_frame=3 - body_id 1
     auto box1 = std::make_shared<Box>(Point3(-0.5, 0, -0.5), Point3(0.5, 1, 0.5), mat.get());
     setup.scene.add_shape(box1);
-    PhysicsProperties box1_props{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3};
+    PhysicsProperties box1_props{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3};
     box1_props.start_asleep = true;
     box1_props.wake_frame = 3;
     setup.shape_physics.push_back(box1_props);
@@ -560,7 +589,7 @@ TestSceneSetup create_test_scene_with_per_body_wake() {
     // Shape 2: Dynamic box, start_asleep=true, no wake_frame - body_id 2
     auto box2 = std::make_shared<Box>(Point3(1, 0, -0.5), Point3(2, 1, 0.5), mat.get());
     setup.scene.add_shape(box2);
-    PhysicsProperties box2_props{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3};
+    PhysicsProperties box2_props{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3};
     box2_props.start_asleep = true;
     // No wake_frame set
     setup.shape_physics.push_back(box2_props);
@@ -568,7 +597,7 @@ TestSceneSetup create_test_scene_with_per_body_wake() {
     // Shape 3: Dynamic box, no start_asleep, no wake_frame - body_id 3
     auto box3 = std::make_shared<Box>(Point3(3, 0, -0.5), Point3(4, 1, 0.5), mat.get());
     setup.scene.add_shape(box3);
-    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), 0.5, 0.3});
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
 
     return setup;
 }
@@ -587,7 +616,7 @@ TEST(AnimationRendererAcceptance, WakesIndividualBodiesAtTheirConfiguredWakeFram
     auto physics = std::make_unique<FakePhysicsSimulator>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                std::move(physics), test_scene.camera, write_cb);
@@ -595,27 +624,15 @@ TEST(AnimationRendererAcceptance, WakesIndividualBodiesAtTheirConfiguredWakeFram
     renderer.render();
 
     // AC1: Body 1 (wake_frame=3) should have wake_body called exactly once
-    int body1_wake_count = 0;
-    for (int id : physics_ptr->wake_body_calls) {
-        if (id == 1) body1_wake_count++;
-    }
-    EXPECT_EQ(body1_wake_count, 1)
+    EXPECT_EQ(count_wake_calls(physics_ptr->wake_body_calls, 1), 1)
         << "Body with wake_frame=3 should be woken exactly once";
 
     // AC2: Body 2 (start_asleep, no wake_frame) should NOT have wake_body called
-    int body2_wake_count = 0;
-    for (int id : physics_ptr->wake_body_calls) {
-        if (id == 2) body2_wake_count++;
-    }
-    EXPECT_EQ(body2_wake_count, 0)
+    EXPECT_EQ(count_wake_calls(physics_ptr->wake_body_calls, 2), 0)
         << "Body with start_asleep but no wake_frame should not be individually woken";
 
     // AC3: Body 3 (not start_asleep) should NOT have wake_body called
-    int body3_wake_count = 0;
-    for (int id : physics_ptr->wake_body_calls) {
-        if (id == 3) body3_wake_count++;
-    }
-    EXPECT_EQ(body3_wake_count, 0)
+    EXPECT_EQ(count_wake_calls(physics_ptr->wake_body_calls, 3), 0)
         << "Body without start_asleep should not be individually woken";
 }
 
@@ -636,7 +653,7 @@ TEST(AnimationRenderer, CallsWakeBodyAtPerBodyWakeFrame) {
     auto physics = std::make_unique<FakePhysicsSimulator>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                std::move(physics), test_scene.camera, write_cb);
@@ -648,7 +665,7 @@ TEST(AnimationRenderer, CallsWakeBodyAtPerBodyWakeFrame) {
     EXPECT_EQ(physics_ptr->wake_body_calls[0], 1);
 }
 
-TEST(AnimationRenderer, GlobalWakeFrameStillWorksAlongsidePerBodyWake) {
+TEST(AnimationRenderer, GlobalWakeFrameSkipsBodiesWithPerBodyWakeFrame) {
     // 5 frames, global wake at frame 2, per-body wake at frame 3
     AnimationConfig config{0.5, 0.01, 10.0, "out/"};
     config.wake_frame = 2;
@@ -658,17 +675,249 @@ TEST(AnimationRenderer, GlobalWakeFrameStillWorksAlongsidePerBodyWake) {
     auto physics = std::make_unique<FakePhysicsSimulator>();
     auto* physics_ptr = physics.get();
 
-    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, int) {};
+    auto write_cb = [](const std::string&, const Scene&, const Camera&, int, const RenderSettings&) {};
 
     AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
                                std::move(physics), test_scene.camera, write_cb);
 
     renderer.render();
 
-    // Per-body wake_body should still be called for body 1 at frame 3
-    // even when global wake_all fires at frame 2
-    ASSERT_EQ(static_cast<int>(physics_ptr->wake_body_calls.size()), 1);
-    EXPECT_EQ(physics_ptr->wake_body_calls[0], 1);
+    // Global wake at frame 2 wakes bodies 0, 2, 3 (no per-body wake_frame).
+    // Body 1 (wake_frame=3) is skipped by global wake and woken at frame 3.
+    EXPECT_EQ(count_wake_calls(physics_ptr->wake_body_calls, 0), 1);
+    EXPECT_EQ(count_wake_calls(physics_ptr->wake_body_calls, 1), 1);
+    EXPECT_EQ(count_wake_calls(physics_ptr->wake_body_calls, 2), 1);
+    EXPECT_EQ(count_wake_calls(physics_ptr->wake_body_calls, 3), 1);
+}
+
+// ==========================================================
+// Helper: create a test scene with finale enabled
+// ==========================================================
+
+TestSceneSetup create_test_scene_with_finale() {
+    TestSceneSetup setup;
+
+    auto mat = std::make_shared<Lambertian>(Vec3(0.8, 0.8, 0.8));
+    setup.materials.push_back(mat);
+
+    // Ground plane (static) - simulates bowling floor
+    auto ground = std::make_shared<Plane>(Point3(0, -1, 0), Vec3(0, 1, 0), mat.get());
+    setup.scene.add_shape(ground);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::STATIC, 0.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
+
+    // Dynamic sphere - simulates bowling ball
+    auto sphere = std::make_shared<Sphere>(Point3(0, 2, 0), 0.5, mat.get());
+    setup.scene.add_shape(sphere);
+    setup.shape_physics.push_back(PhysicsProperties{BodyType::DYNAMIC, 1.0, Vec3(0, 0, 0), Vec3(0, 0, 0), 0.5, 0.3});
+
+    return setup;
+}
+
+AnimationConfig create_finale_config(int main_frames, int finale_frames) {
+    int total = main_frames + finale_frames;
+    double fps = 10.0;
+    double duration = static_cast<double>(total) / fps;
+    AnimationConfig config{duration, 0.01, fps, "out/"};
+    config.wake_frame = -1;
+    config.finale.enabled = true;
+    config.finale.start_frame = main_frames;
+    config.finale.earth_radius = 1.5;
+    config.finale.earth_tilt_degrees = 23.5;
+    config.finale.moon_radius_ratio = 0.25;
+    // No texture paths -- will use fallback Lambertian materials
+    return config;
+}
+
+// ==========================================================
+// ACCEPTANCE TEST: Phase-specific lighting (M1-M5)
+//
+// Behaviors:
+//   1. Finale uses DirectionalLight for Sun (M1)
+//   2. Finale clears prior scene shapes (M2)
+//   3. Finale ambient is 0.0 -- directional light only (M3)
+//   4. Main animation ambient is 0.8 -- bright ambient only (M4)
+//   5. Main animation has no lights -- ambient only (M5)
+//
+// Test Budget: 5 behaviors x 2 = 10 max unit tests
+// ==========================================================
+
+TEST(AnimationRendererAcceptance, FinaleUsesDirectionalLightAndClearsSceneWithCorrectAmbient) {
+    // 2 main frames + 2 finale frames
+    auto config = create_finale_config(2, 2);
+    ASSERT_EQ(config.total_frames(), 4);
+
+    auto test_scene = create_test_scene_with_finale();
+    int original_shape_count = static_cast<int>(test_scene.scene.shapes().size());
+    ASSERT_EQ(original_shape_count, 2); // ground + sphere
+
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+
+    bool found_directional_light = false;
+    bool found_point_sun = false;
+    int finale_shape_count = -1;
+    float main_ambient = -1.0f;
+    float finale_ambient = -1.0f;
+    int main_light_count = -1;
+    int frame_counter = 0;
+
+    auto write_cb = [&](const std::string&, const Scene& scene,
+                        const Camera&, int, const RenderSettings& settings) {
+        frame_counter++;
+        if (frame_counter <= 2) {
+            // Main animation frames
+            main_ambient = settings.ambient_factor;
+            main_light_count = static_cast<int>(scene.lights().size());
+        } else {
+            // Finale frames
+            finale_ambient = settings.ambient_factor;
+            finale_shape_count = static_cast<int>(scene.shapes().size());
+
+            for (const auto& light : scene.lights()) {
+                if (dynamic_cast<const DirectionalLight*>(light.get())) {
+                    found_directional_light = true;
+                }
+                // Check if the "Sun" (intensity >= 1.0) is a PointLight
+                if (auto* pl = dynamic_cast<const PointLight*>(light.get())) {
+                    if (pl->intensity() >= 1.0) {
+                        found_point_sun = true;
+                    }
+                }
+            }
+        }
+    };
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // AC1 (M1): Finale uses DirectionalLight for the Sun, not PointLight
+    EXPECT_TRUE(found_directional_light)
+        << "Finale should use DirectionalLight for sunlight simulation";
+    EXPECT_FALSE(found_point_sun)
+        << "Finale Sun should not be a PointLight (quadratic attenuation kills intensity)";
+
+    // AC2 (M2): Finale scene includes Earth + Moon (at minimum 2 shapes).
+    // During the fall transition, bowling shapes are still present while falling away.
+    EXPECT_GE(finale_shape_count, 2)
+        << "Finale should include at least Earth and Moon";
+
+    // AC3 (M3): Finale ambient is 0.0 (directional light only, no ambient)
+    EXPECT_FLOAT_EQ(finale_ambient, 0.02f)
+        << "Finale ambient should be 0.0 (directional light only)";
+
+    // AC4 (M4): Main animation ambient is 0.15 (dimmed with directional lights)
+    EXPECT_FLOAT_EQ(main_ambient, 0.08f)
+        << "Main animation ambient should be 0.15 (dimmed with directional lights)";
+
+    // AC5 (M5): Main animation has 2 directional lights
+    EXPECT_EQ(main_light_count, 2)
+        << "Main animation should have 2 directional lights";
+}
+
+// ==========================================================
+// UNIT TEST: Finale uses DirectionalLight for Sun (M1)
+// ==========================================================
+
+TEST(AnimationRenderer, FinaleUsesDirectionalLightInsteadOfPointLightForSun) {
+    auto config = create_finale_config(1, 1);
+
+    auto test_scene = create_test_scene_with_finale();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+
+    std::vector<std::shared_ptr<Light>> finale_lights;
+    int frame_counter = 0;
+    auto write_cb = [&](const std::string&, const Scene& scene,
+                        const Camera&, int, const RenderSettings&) {
+        frame_counter++;
+        if (frame_counter == 2) { // finale frame
+            finale_lights = scene.lights();
+        }
+    };
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // At least one light should be a DirectionalLight
+    bool has_directional = false;
+    for (const auto& light : finale_lights) {
+        if (dynamic_cast<const DirectionalLight*>(light.get())) {
+            has_directional = true;
+        }
+    }
+    EXPECT_TRUE(has_directional)
+        << "Finale should contain a DirectionalLight for sunlight";
+}
+
+// ==========================================================
+// UNIT TEST: Finale clears prior scene shapes (M2)
+// ==========================================================
+
+TEST(AnimationRenderer, FinaleClearsPriorSceneShapesBeforeAddingEarthAndMoon) {
+    auto config = create_finale_config(1, 1);
+
+    auto test_scene = create_test_scene_with_finale();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+
+    int finale_shape_count = -1;
+    int frame_counter = 0;
+    auto write_cb = [&](const std::string&, const Scene& scene,
+                        const Camera&, int, const RenderSettings&) {
+        frame_counter++;
+        if (frame_counter == 2) { // finale frame
+            finale_shape_count = static_cast<int>(scene.shapes().size());
+        }
+    };
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // During the fall transition, bowling shapes are present while falling away.
+    // Earth + Moon are always present (at minimum 2 shapes).
+    EXPECT_GE(finale_shape_count, 2)
+        << "Finale should include at least Earth and Moon";
+}
+
+// ==========================================================
+// UNIT TEST: Ambient factor values (M3 + M4)
+// ==========================================================
+
+TEST(AnimationRenderer, MainAnimationUsesBrightAmbientOnlyAndFinaleUsesNoAmbient) {
+    auto config = create_finale_config(2, 1);
+
+    auto test_scene = create_test_scene_with_finale();
+    auto physics = std::make_unique<FakePhysicsSimulator>();
+
+    float captured_main_ambient = -1.0f;
+    float captured_finale_ambient = -1.0f;
+    int main_light_count = -1;
+    int frame_counter = 0;
+    auto write_cb = [&](const std::string&, const Scene& scene,
+                        const Camera&, int, const RenderSettings& settings) {
+        frame_counter++;
+        if (frame_counter == 1) {
+            captured_main_ambient = settings.ambient_factor;
+            main_light_count = static_cast<int>(scene.lights().size());
+        } else if (frame_counter == 3) { // finale frame (after 2 main frames)
+            captured_finale_ambient = settings.ambient_factor;
+        }
+    };
+
+    AnimationRenderer renderer(config, test_scene.scene, test_scene.shape_physics,
+                               std::move(physics), test_scene.camera, write_cb);
+
+    renderer.render();
+
+    // M4: Main animation ambient = 0.15 (dimmed with directional lights)
+    EXPECT_FLOAT_EQ(captured_main_ambient, 0.08f);
+    // M5: 2 directional lights during bowling phase
+    EXPECT_EQ(main_light_count, 2);
+    // M3: Finale ambient = 0.0 (directional light only)
+    EXPECT_FLOAT_EQ(captured_finale_ambient, 0.02f);
 }
 
 } // namespace

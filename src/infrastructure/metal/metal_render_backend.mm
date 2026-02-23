@@ -44,6 +44,10 @@ GPUCamera pack_gpu_camera(const Camera& camera, const RenderSettings& settings) 
     gpu.image_height = static_cast<uint32_t>(camera.image_height());
     gpu.samples_per_pixel = static_cast<uint32_t>(settings.samples_per_pixel);
     gpu.max_depth = static_cast<uint32_t>(settings.max_depth);
+    gpu.ambient_factor = settings.ambient_factor;
+    gpu.batch_index = 0;
+    gpu.num_batches = 1;
+    gpu._pad6 = 0.0f;
 
     return gpu;
 }

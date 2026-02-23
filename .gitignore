@@ -21,6 +21,12 @@ cmake-build-*/
 *.so
 *.dylib
 
+# Videos
+*.mp4
+
+# Metal compiled shaders
+*.metallib
+
 # Clangd
 .cache/
 compile_commands.json

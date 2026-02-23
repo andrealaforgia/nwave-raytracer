@@ -22,12 +22,15 @@ add_library(nwave_domain
     domain/materials/metal.cpp
     domain/materials/dielectric.cpp
     domain/materials/emissive.cpp
+    domain/materials/checker_metal.cpp
+    domain/materials/image_texture.cpp
+    domain/materials/procedural_texture.cpp
     domain/lights/point_light.cpp
     domain/lights/directional_light.cpp
     domain/camera.cpp
     domain/scene.cpp
 )
-target_include_directories(nwave_domain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(nwave_domain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../external)
 target_link_libraries(nwave_domain PUBLIC nwave_core)
 
 add_library(nwave_application
@@ -127,5 +130,5 @@ if(NWAVE_HAS_METAL)
     endif()
 endif()
 
-add_executable(nwave main.cpp)
-target_link_libraries(nwave PRIVATE nwave_infrastructure)
+add_executable(rt main.cpp)
+target_link_libraries(rt PRIVATE nwave_infrastructure)

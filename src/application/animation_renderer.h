@@ -3,6 +3,7 @@
 
 #include "application/physics_simulator.h"
 #include "application/progress_reporter.h"
+#include "application/renderer.h"
 #include "domain/animation_config.h"
 #include "domain/scene.h"
 #include "domain/camera.h"
@@ -18,7 +19,8 @@ namespace nwave {
 using WriteCallback = std::function<void(const std::string& filename,
                                          const Scene& scene,
                                          const Camera& camera,
-                                         int width, int spp)>;
+                                         int width,
+                                         const RenderSettings& settings)>;
 
 class AnimationRenderer {
 public:

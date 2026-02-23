@@ -18,6 +18,7 @@ struct RenderSettings {
     Color3 background_bottom = Color3(1.0, 1.0, 1.0);
     int num_threads = 0; // 0 = auto-detect (hardware_concurrency)
     RenderBackendType backend = RenderBackendType::CPU;
+    float ambient_factor = 0.05f;
 };
 
 class Renderer {

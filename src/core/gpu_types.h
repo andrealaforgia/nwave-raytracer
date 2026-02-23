@@ -19,10 +19,11 @@ enum class GPUShapeType : uint32_t {
 };
 
 enum class GPUMaterialType : uint32_t {
-    LAMBERTIAN  = 0,
-    METAL       = 1,
-    DIELECTRIC  = 2,
-    EMISSIVE    = 3
+    LAMBERTIAN    = 0,
+    METAL         = 1,
+    DIELECTRIC    = 2,
+    EMISSIVE      = 3,
+    CHECKER_METAL = 4
 };
 
 enum class GPULightType : uint32_t {
@@ -50,10 +51,14 @@ struct alignas(16) GPUCamera {
     uint32_t image_height;         //100: image height in pixels
     uint32_t samples_per_pixel;    //104: SPP count
     uint32_t max_depth;            //108: maximum ray bounce depth
-};                                 //112 bytes total
+    float    ambient_factor;       //112: shader ambient multiplier (default 0.05)
+    uint32_t batch_index;          //116: current batch (0-based)
+    uint32_t num_batches;          //120: total batch count (1 = no batching)
+    float    _pad6;                //124: alignment padding
+};                                 //128 bytes total
 
-static_assert(sizeof(GPUCamera) == 112,
-    "GPUCamera must be 112 bytes for Metal buffer compatibility");
+static_assert(sizeof(GPUCamera) == 128,
+    "GPUCamera must be 128 bytes for Metal buffer compatibility");
 static_assert(alignof(GPUCamera) >= 16,
     "GPUCamera must be 16-byte aligned");
 
@@ -81,15 +86,16 @@ static_assert(alignof(GPUShape) >= 16,
 /// GPU material -- tagged union for all material types.
 /// param1 usage: fuzziness (Metal), ior (Dielectric), unused (Lambertian/Emissive)
 /// tint usage: tint color (Dielectric), unused for others
+/// texture_offset: -1 = no texture, >= 0 = byte offset into texture data buffer
 struct alignas(16) GPUMaterial {
     uint32_t material_type;   //  0: GPUMaterialType
-    float    _pad0;           //  4: padding
-    float    _pad1;           //  8: padding
-    float    _pad2;           // 12: padding
+    int32_t  texture_offset;  //  4: -1 = no texture, >= 0 = byte offset into texture data
+    float    texture_width;   //  8: texture width in pixels (0 if no texture)
+    float    texture_height;  // 12: texture height in pixels (0 if no texture)
     float    albedo[3];       // 16: color/albedo
     float    param1;          // 28: fuzziness (Metal), ior (Dielectric), or unused
     float    tint[3];         // 32: tint color for Dielectric, unused for others
-    float    _pad3;           // 44: padding
+    float    texture_scale;   // 44: UV scale for textures (0 = default/full coverage)
 };                            // 48 bytes total
 
 static_assert(sizeof(GPUMaterial) == 48,

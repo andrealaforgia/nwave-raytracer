@@ -235,8 +235,9 @@ TEST_F(SceneFlattenerTest, DirectionalLightFlattensCorrectly) {
     ASSERT_EQ(result.lights.size(), 1u);
     const auto& gpu_light = result.lights[0];
     EXPECT_EQ(gpu_light.light_type, static_cast<uint32_t>(GPULightType::DIRECTIONAL));
+    // Direction is negated by the flattener so the shader receives toward-light
     EXPECT_FLOAT_EQ(gpu_light.position[0], 0.0f);
-    EXPECT_FLOAT_EQ(gpu_light.position[1], -1.0f);
+    EXPECT_FLOAT_EQ(gpu_light.position[1], 1.0f);
     EXPECT_FLOAT_EQ(gpu_light.position[2], 0.0f);
     EXPECT_FLOAT_EQ(gpu_light.color[0], 0.9f);
     EXPECT_FLOAT_EQ(gpu_light.color[1], 0.8f);

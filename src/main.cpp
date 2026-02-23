@@ -312,11 +312,11 @@ static int run_physics_animate(const RenderCommand& cmd) {
     WriteCallback write_cb = [spp, backend_ptr](const std::string& filename,
                                                  const Scene& scene,
                                                  const Camera& cam,
-                                                 int /*width*/, int /*spp_hint*/) {
-        RenderSettings settings;
+                                                 int /*width*/,
+                                                 const RenderSettings& base_settings) {
+        // Merge command-line SPP into the per-frame settings from animation renderer
+        RenderSettings settings = base_settings;
         settings.samples_per_pixel = spp;
-        settings.max_depth = default_max_depth;
-
         auto pixels = backend_ptr->render(cam, scene, settings);
         write_ppm(filename, pixels, cam.image_width(), cam.image_height());
     };

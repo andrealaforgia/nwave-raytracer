@@ -227,6 +227,10 @@ int JoltPhysicsSimulator::add_body(const PhysicsBodyDesc& desc) {
             static_cast<float>(desc.properties.initial_velocity.x()),
             static_cast<float>(desc.properties.initial_velocity.y()),
             static_cast<float>(desc.properties.initial_velocity.z()));
+        body_settings.mAngularVelocity = JPH::Vec3(
+            static_cast<float>(desc.properties.initial_angular_velocity.x()),
+            static_cast<float>(desc.properties.initial_angular_velocity.y()),
+            static_cast<float>(desc.properties.initial_angular_velocity.z()));
     }
 
     // Static bodies and bodies marked start_asleep are not activated.
@@ -304,29 +308,64 @@ void JoltPhysicsSimulator::wake_body(int body_id) {
     body_interface.ActivateBody(impl_->body_ids[body_id]);
 }
 
+void JoltPhysicsSimulator::set_linear_velocity(int body_id, const Vec3& velocity) {
+    if (!impl_->is_valid_body_id(body_id)) {
+        throw std::runtime_error("Invalid body id");
+    }
+    JPH::BodyInterface& body_interface = impl_->physics_system.GetBodyInterface();
+    body_interface.SetLinearVelocity(impl_->body_ids[body_id], JPH::Vec3(
+        static_cast<float>(velocity.x()),
+        static_cast<float>(velocity.y()),
+        static_cast<float>(velocity.z())));
+}
+
+void JoltPhysicsSimulator::set_angular_velocity(int body_id, const Vec3& angular_velocity) {
+    if (!impl_->is_valid_body_id(body_id)) {
+        throw std::runtime_error("Invalid body id");
+    }
+    JPH::BodyInterface& body_interface = impl_->physics_system.GetBodyInterface();
+    body_interface.SetAngularVelocity(impl_->body_ids[body_id], JPH::Vec3(
+        static_cast<float>(angular_velocity.x()),
+        static_cast<float>(angular_velocity.y()),
+        static_cast<float>(angular_velocity.z())));
+}
+
+void JoltPhysicsSimulator::set_motion_type(int body_id, BodyType type) {
+    if (!impl_->is_valid_body_id(body_id)) {
+        throw std::runtime_error("Invalid body id");
+    }
+    auto [motion_type, layer] = map_body_type_to_motion(type);
+    JPH::BodyInterface& body_interface = impl_->physics_system.GetBodyInterface();
+    body_interface.SetMotionType(impl_->body_ids[body_id], motion_type, JPH::EActivation::Activate);
+}
+
 int JoltPhysicsSimulator::add_soft_body(const SoftBodyDesc& desc) {
-    const int grid_size = desc.grid_resolution;
+    const int res_x = desc.grid_resolution;
+    const int res_y = desc.grid_resolution_y > 0 ? desc.grid_resolution_y : desc.grid_resolution;
+    const int res_z = desc.grid_resolution;
     const float spacing = static_cast<float>(desc.grid_spacing);
 
-    // Vertex index helper: x + y*grid_size + z*grid_size*grid_size
-    auto vertex_index = [grid_size](int x, int y, int z) -> uint32_t {
-        return static_cast<uint32_t>(x + y * grid_size + z * grid_size * grid_size);
+    // Vertex index helper: x + y*res_x + z*res_x*res_y
+    auto vertex_index = [res_x, res_y](int x, int y, int z) -> uint32_t {
+        return static_cast<uint32_t>(x + y * res_x + z * res_x * res_y);
     };
 
-    // 1. Create shared settings with grid_size^3 vertex grid
+    // 1. Create shared settings with res_x * res_y * res_z vertex grid
     JPH::Ref<JPH::SoftBodySharedSettings> shared = new JPH::SoftBodySharedSettings;
 
     // Center the grid around origin so the body's center of mass aligns with desc.position
-    const float half_extent = spacing * static_cast<float>(grid_size - 1) * 0.5f;
+    const float half_x = spacing * static_cast<float>(res_x - 1) * 0.5f;
+    const float half_y = spacing * static_cast<float>(res_y - 1) * 0.5f;
+    const float half_z = spacing * static_cast<float>(res_z - 1) * 0.5f;
 
-    for (int z = 0; z < grid_size; ++z) {
-        for (int y = 0; y < grid_size; ++y) {
-            for (int x = 0; x < grid_size; ++x) {
+    for (int z = 0; z < res_z; ++z) {
+        for (int y = 0; y < res_y; ++y) {
+            for (int x = 0; x < res_x; ++x) {
                 JPH::SoftBodySharedSettings::Vertex v;
                 JPH::Vec3 pos(
-                    static_cast<float>(x) * spacing - half_extent,
-                    static_cast<float>(y) * spacing - half_extent,
-                    static_cast<float>(z) * spacing - half_extent);
+                    static_cast<float>(x) * spacing - half_x,
+                    static_cast<float>(y) * spacing - half_y,
+                    static_cast<float>(z) * spacing - half_z);
                 pos.StoreFloat3(&v.mPosition);
                 v.mInvMass = 1.0f;
                 shared->mVertices.push_back(v);
@@ -336,19 +375,19 @@ int JoltPhysicsSimulator::add_soft_body(const SoftBodyDesc& desc) {
 
     // 2. Add edge constraints along each axis (x, y, z neighbors)
     const float edge_compliance = static_cast<float>(desc.edge_compliance);
-    for (int z = 0; z < grid_size; ++z) {
-        for (int y = 0; y < grid_size; ++y) {
-            for (int x = 0; x < grid_size; ++x) {
+    for (int z = 0; z < res_z; ++z) {
+        for (int y = 0; y < res_y; ++y) {
+            for (int x = 0; x < res_x; ++x) {
                 uint32_t idx = vertex_index(x, y, z);
-                if (x < grid_size - 1) {
+                if (x < res_x - 1) {
                     shared->mEdgeConstraints.push_back(
                         JPH::SoftBodySharedSettings::Edge(idx, vertex_index(x + 1, y, z), edge_compliance));
                 }
-                if (y < grid_size - 1) {
+                if (y < res_y - 1) {
                     shared->mEdgeConstraints.push_back(
                         JPH::SoftBodySharedSettings::Edge(idx, vertex_index(x, y + 1, z), edge_compliance));
                 }
-                if (z < grid_size - 1) {
+                if (z < res_z - 1) {
                     shared->mEdgeConstraints.push_back(
                         JPH::SoftBodySharedSettings::Edge(idx, vertex_index(x, y, z + 1), edge_compliance));
                 }
@@ -369,9 +408,9 @@ int JoltPhysicsSimulator::add_soft_body(const SoftBodyDesc& desc) {
     };
 
     const float volume_compliance = static_cast<float>(desc.volume_compliance);
-    for (int z = 0; z < grid_size - 1; ++z) {
-        for (int y = 0; y < grid_size - 1; ++y) {
-            for (int x = 0; x < grid_size - 1; ++x) {
+    for (int z = 0; z < res_z - 1; ++z) {
+        for (int y = 0; y < res_y - 1; ++y) {
+            for (int x = 0; x < res_x - 1; ++x) {
                 for (int t = 0; t < 6; ++t) {
                     uint32_t v0 = vertex_index(x + tetra_offsets[t][0][0],
                                                y + tetra_offsets[t][0][1],
@@ -393,8 +432,10 @@ int JoltPhysicsSimulator::add_soft_body(const SoftBodyDesc& desc) {
     }
     shared->CalculateVolumeConstraintVolumes();
 
-    // 4. Add surface faces (triangulated quads) on all 6 outer faces of the cube
-    const int last = grid_size - 1;
+    // 4. Add surface faces (triangulated quads) on all 6 outer faces
+    const int last_x = res_x - 1;
+    const int last_y = res_y - 1;
+    const int last_z = res_z - 1;
 
     // Adds two triangles forming a quad from four vertex indices.
     // Winding follows Jolt's convention for correct pressure/volume computation.
@@ -404,25 +445,33 @@ int JoltPhysicsSimulator::add_soft_body(const SoftBodyDesc& desc) {
         shared->AddFace(JPH::SoftBodySharedSettings::Face(v00, v11, v01));
     };
 
-    for (int a = 0; a < last; ++a) {
-        for (int b = 0; b < last; ++b) {
-            // Front (z=0) and back (z=last)
-            add_quad_face(vertex_index(b, a, 0), vertex_index(b + 1, a, 0),
-                          vertex_index(b + 1, a + 1, 0), vertex_index(b, a + 1, 0));
-            add_quad_face(vertex_index(b, a, last), vertex_index(b, a + 1, last),
-                          vertex_index(b + 1, a + 1, last), vertex_index(b + 1, a, last));
+    // Front (z=0) and back (z=last_z): iterate over x and y
+    for (int y = 0; y < last_y; ++y) {
+        for (int x = 0; x < last_x; ++x) {
+            add_quad_face(vertex_index(x, y, 0), vertex_index(x + 1, y, 0),
+                          vertex_index(x + 1, y + 1, 0), vertex_index(x, y + 1, 0));
+            add_quad_face(vertex_index(x, y, last_z), vertex_index(x, y + 1, last_z),
+                          vertex_index(x + 1, y + 1, last_z), vertex_index(x + 1, y, last_z));
+        }
+    }
 
-            // Bottom (y=0) and top (y=last)
-            add_quad_face(vertex_index(b, 0, a), vertex_index(b, 0, a + 1),
-                          vertex_index(b + 1, 0, a + 1), vertex_index(b + 1, 0, a));
-            add_quad_face(vertex_index(b, last, a), vertex_index(b + 1, last, a),
-                          vertex_index(b + 1, last, a + 1), vertex_index(b, last, a + 1));
+    // Bottom (y=0) and top (y=last_y): iterate over x and z
+    for (int z = 0; z < last_z; ++z) {
+        for (int x = 0; x < last_x; ++x) {
+            add_quad_face(vertex_index(x, 0, z), vertex_index(x, 0, z + 1),
+                          vertex_index(x + 1, 0, z + 1), vertex_index(x + 1, 0, z));
+            add_quad_face(vertex_index(x, last_y, z), vertex_index(x + 1, last_y, z),
+                          vertex_index(x + 1, last_y, z + 1), vertex_index(x, last_y, z + 1));
+        }
+    }
 
-            // Left (x=0) and right (x=last)
-            add_quad_face(vertex_index(0, a, b), vertex_index(0, a + 1, b),
-                          vertex_index(0, a + 1, b + 1), vertex_index(0, a, b + 1));
-            add_quad_face(vertex_index(last, a, b), vertex_index(last, a, b + 1),
-                          vertex_index(last, a + 1, b + 1), vertex_index(last, a + 1, b));
+    // Left (x=0) and right (x=last_x): iterate over y and z
+    for (int z = 0; z < last_z; ++z) {
+        for (int y = 0; y < last_y; ++y) {
+            add_quad_face(vertex_index(0, y, z), vertex_index(0, y + 1, z),
+                          vertex_index(0, y + 1, z + 1), vertex_index(0, y, z + 1));
+            add_quad_face(vertex_index(last_x, y, z), vertex_index(last_x, y, z + 1),
+                          vertex_index(last_x, y + 1, z + 1), vertex_index(last_x, y + 1, z));
         }
     }
 

@@ -4,8 +4,8 @@
 #include <cstring>
 
 // Acceptance: GPUCamera struct has correct size and alignment for Metal buffer compatibility
-TEST(GPUTypesTest, GPUCameraIs112BytesAnd16ByteAligned) {
-    EXPECT_EQ(sizeof(nwave::GPUCamera), 112u);
+TEST(GPUTypesTest, GPUCameraIs128BytesAnd16ByteAligned) {
+    EXPECT_EQ(sizeof(nwave::GPUCamera), 128u);
     EXPECT_GE(alignof(nwave::GPUCamera), 16u);
 }
 
@@ -27,6 +27,10 @@ TEST(GPUTypesTest, GPUCameraFieldOffsetsMatchMetalBufferLayout) {
     EXPECT_EQ(offsetof(nwave::GPUCamera, image_height),    100u);
     EXPECT_EQ(offsetof(nwave::GPUCamera, samples_per_pixel), 104u);
     EXPECT_EQ(offsetof(nwave::GPUCamera, max_depth),       108u);
+    EXPECT_EQ(offsetof(nwave::GPUCamera, ambient_factor),  112u);
+    EXPECT_EQ(offsetof(nwave::GPUCamera, batch_index),     116u);
+    EXPECT_EQ(offsetof(nwave::GPUCamera, num_batches),     120u);
+    EXPECT_EQ(offsetof(nwave::GPUCamera, _pad6),           124u);
 }
 
 // Acceptance: GPUShape struct has correct size and alignment for Metal buffer compatibility
@@ -65,14 +69,14 @@ TEST(GPUTypesTest, GPUShapeFieldOffsetsMatchMetalLayout) {
 
 // Acceptance: GPUMaterial fields are at correct offsets matching Metal buffer layout
 TEST(GPUTypesTest, GPUMaterialFieldOffsetsMatchMetalLayout) {
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, material_type),  0u);
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad0),          4u);
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad1),          8u);
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad2),         12u);
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, albedo),        16u);
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, param1),        28u);
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, tint),          32u);
-    EXPECT_EQ(offsetof(nwave::GPUMaterial, _pad3),         44u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, material_type),   0u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, texture_offset),  4u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, texture_width),   8u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, texture_height), 12u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, albedo),         16u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, param1),         28u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, tint),           32u);
+    EXPECT_EQ(offsetof(nwave::GPUMaterial, texture_scale),  44u);
 }
 
 // Acceptance: GPUCamera can be zero-initialized and fields are writable

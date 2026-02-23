@@ -29,3 +29,8 @@ steps:
     tests: PASS
     timestamp: "2026-02-19"
     summary: "Added per-body wake_frame check in animation render loop. After global wake_all, iterates shape_physics_ and calls wake_body for bodies whose wake_frame matches current frame. 1 acceptance test + 2 unit tests. All 343 tests pass."
+  - step_id: "04-01"
+    status: COMMIT
+    tests: PASS
+    timestamp: "2026-02-19"
+    summary: "Added blue_glass material (dielectric, ior 1.5, tint [0.4, 0.4, 0.95]) and sweeper_prism box (kinematic, velocity [0,0,-3.44], start_asleep true, wake_frame 60) to nwave_bowling.yaml. All 343 tests pass including existing scene parse tests."

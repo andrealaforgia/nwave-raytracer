@@ -93,7 +93,7 @@ TEST(JellyDemoIntegration, SceneLoadsAndAnimationRunsWithoutCrashes) {
 
     // Use no-op write callback that just counts frames
     auto write_cb = [&](const std::string& filename, const Scene& scene,
-                        const Camera& camera, int width, int spp) {
+                        const Camera& camera, int width, const RenderSettings&) {
         frame_count++;
     };
 

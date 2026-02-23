@@ -1,6 +1,8 @@
 # nWave Bowling Demo Scene
-# Matches the original hardcoded scene: chessboard floor, colored pixel-art letters,
-# green glass W. A bowling ball rolls toward the W, scattering its glass blocks.
+# Glass chessboard floor, colored pixel-art letters, green glass W.
+# A bowling ball rolls toward the W, scattering its glass blocks.
+# After the sweeper clears, textured spheres roll across one after another.
+# Earth finale: rotating tilted Earth with orbiting Moon.
 
 materials:
   - name: white_metal
@@ -63,93 +65,41 @@ materials:
     type: dielectric
     ior: 1.15
     tint: [0.7, 0.25, 0.95]
-  - name: marble_texture
-    type: image_texture
-    texture: /Users/andrealaforgia/Desktop/6-Marble-Texture-1024x683.jpg
-    texture_mapping: cube_map
-  - name: earth_texture
-    type: image_texture
-    texture: /Users/andrealaforgia/Desktop/flat_earth03.jpg
-  - name: wood_texture
-    type: image_texture
-    texture: /Users/andrealaforgia/Desktop/demo0_wood-120.jpg
-    texture_mapping: cube_map
-  - name: eye_texture
-    type: image_texture
-    texture: /Users/andrealaforgia/Desktop/eye_cylindrical_map_texture_by_colourness_dg02efy-fullview.jpg
-  - name: moon_texture
-    type: image_texture
-    texture: /Users/andrealaforgia/Downloads/moon.jpg
+  # Reflective checkered floor (white/blue)
+  - name: floor_marble
+    type: checker_metal
+    color_a: [0.9, 0.9, 0.9]
+    color_b: [0.15, 0.25, 0.85]
+    fuzz: 0.02
+    scale: 1.0
+  # === Procedural texture materials (20 patterns) ===
+  - { name: tex_camouflage, type: procedural_texture, pattern: camouflage, width: 1024, height: 512, seed: 12 }
+  - { name: tex_cave_art, type: procedural_texture, pattern: cave_art, width: 1024, height: 512, seed: 99 }
+  - { name: tex_clouds, type: procedural_texture, pattern: clouds, width: 1024, height: 512, seed: 55 }
+  - { name: tex_concrete, type: procedural_texture, pattern: concrete, width: 1024, height: 512, seed: 35 }
+  - { name: tex_entangled, type: procedural_texture, pattern: entangled, width: 1024, height: 512, seed: 31 }
+  - { name: tex_fordite, type: procedural_texture, pattern: fordite, width: 1024, height: 512, seed: 73 }
+  - { name: tex_grid, type: procedural_texture, pattern: grid, width: 1024, height: 512, seed: 88 }
+  - { name: tex_isolines, type: procedural_texture, pattern: isolines, width: 1024, height: 512, seed: 64 }
+  - { name: tex_marble, type: procedural_texture, pattern: marble, width: 1024, height: 512, seed: 17 }
+  - { name: tex_neon_lights, type: procedural_texture, pattern: neon_lights, width: 1024, height: 512, seed: 14 }
+  - { name: tex_planet, type: procedural_texture, pattern: planet, width: 1024, height: 512, seed: 42 }
+  - { name: tex_photosphere, type: procedural_texture, pattern: photosphere, width: 1024, height: 512, seed: 66 }
+  - { name: tex_polka_dots, type: procedural_texture, pattern: polka_dots, width: 1024, height: 512, seed: 7 }
+  - { name: tex_satin, type: procedural_texture, pattern: satin, width: 1024, height: 512, seed: 21 }
+  - { name: tex_scepter_head, type: procedural_texture, pattern: scepter_head, width: 1024, height: 512, seed: 48 }
+  - { name: tex_scream, type: procedural_texture, pattern: scream, width: 1024, height: 512, seed: 53 }
+  - { name: tex_simplex_noise, type: procedural_texture, pattern: simplex_noise, width: 1024, height: 512, seed: 27 }
+  - { name: tex_stars, type: procedural_texture, pattern: stars, width: 1024, height: 512, seed: 82 }
+  - { name: tex_water_drops, type: procedural_texture, pattern: water_drops, width: 1024, height: 512, seed: 39 }
+  - { name: tex_zebra, type: procedural_texture, pattern: zebra, width: 1024, height: 512, seed: 91 }
 
 objects:
-  # === Ground floor (hidden below chessboard, seamless physics collision) ===
-  - { name: ground_floor, type: box, min: [-10, -1, -10], max: [10, -0.14, 10], material: black_metal }
+  # === Dark base box underneath the glass chessboard ===
+  - { name: ground_base, type: box, min: [-15, -1.0, -10], max: [10, -0.05, 10], material: black_metal }
 
-  # === Chessboard (8x8) ===
-  - { name: board_0_0, type: box, min: [-4.0, -0.15, -4.0], max: [-3.0, 0.0, -3.0], material: white_metal }
-  - { name: board_0_1, type: box, min: [-3.0, -0.15, -4.0], max: [-2.0, 0.0, -3.0], material: black_metal }
-  - { name: board_0_2, type: box, min: [-2.0, -0.15, -4.0], max: [-1.0, 0.0, -3.0], material: white_metal }
-  - { name: board_0_3, type: box, min: [-1.0, -0.15, -4.0], max: [0.0, 0.0, -3.0], material: black_metal }
-  - { name: board_0_4, type: box, min: [0.0, -0.15, -4.0], max: [1.0, 0.0, -3.0], material: white_metal }
-  - { name: board_0_5, type: box, min: [1.0, -0.15, -4.0], max: [2.0, 0.0, -3.0], material: black_metal }
-  - { name: board_0_6, type: box, min: [2.0, -0.15, -4.0], max: [3.0, 0.0, -3.0], material: white_metal }
-  - { name: board_0_7, type: box, min: [3.0, -0.15, -4.0], max: [4.0, 0.0, -3.0], material: black_metal }
-  - { name: board_1_0, type: box, min: [-4.0, -0.15, -3.0], max: [-3.0, 0.0, -2.0], material: black_metal }
-  - { name: board_1_1, type: box, min: [-3.0, -0.15, -3.0], max: [-2.0, 0.0, -2.0], material: white_metal }
-  - { name: board_1_2, type: box, min: [-2.0, -0.15, -3.0], max: [-1.0, 0.0, -2.0], material: black_metal }
-  - { name: board_1_3, type: box, min: [-1.0, -0.15, -3.0], max: [0.0, 0.0, -2.0], material: white_metal }
-  - { name: board_1_4, type: box, min: [0.0, -0.15, -3.0], max: [1.0, 0.0, -2.0], material: black_metal }
-  - { name: board_1_5, type: box, min: [1.0, -0.15, -3.0], max: [2.0, 0.0, -2.0], material: white_metal }
-  - { name: board_1_6, type: box, min: [2.0, -0.15, -3.0], max: [3.0, 0.0, -2.0], material: black_metal }
-  - { name: board_1_7, type: box, min: [3.0, -0.15, -3.0], max: [4.0, 0.0, -2.0], material: white_metal }
-  - { name: board_2_0, type: box, min: [-4.0, -0.15, -2.0], max: [-3.0, 0.0, -1.0], material: white_metal }
-  - { name: board_2_1, type: box, min: [-3.0, -0.15, -2.0], max: [-2.0, 0.0, -1.0], material: black_metal }
-  - { name: board_2_2, type: box, min: [-2.0, -0.15, -2.0], max: [-1.0, 0.0, -1.0], material: white_metal }
-  - { name: board_2_3, type: box, min: [-1.0, -0.15, -2.0], max: [0.0, 0.0, -1.0], material: black_metal }
-  - { name: board_2_4, type: box, min: [0.0, -0.15, -2.0], max: [1.0, 0.0, -1.0], material: white_metal }
-  - { name: board_2_5, type: box, min: [1.0, -0.15, -2.0], max: [2.0, 0.0, -1.0], material: black_metal }
-  - { name: board_2_6, type: box, min: [2.0, -0.15, -2.0], max: [3.0, 0.0, -1.0], material: white_metal }
-  - { name: board_2_7, type: box, min: [3.0, -0.15, -2.0], max: [4.0, 0.0, -1.0], material: black_metal }
-  - { name: board_3_0, type: box, min: [-4.0, -0.15, -1.0], max: [-3.0, 0.0, 0.0], material: black_metal }
-  - { name: board_3_1, type: box, min: [-3.0, -0.15, -1.0], max: [-2.0, 0.0, 0.0], material: white_metal }
-  - { name: board_3_2, type: box, min: [-2.0, -0.15, -1.0], max: [-1.0, 0.0, 0.0], material: black_metal }
-  - { name: board_3_3, type: box, min: [-1.0, -0.15, -1.0], max: [0.0, 0.0, 0.0], material: white_metal }
-  - { name: board_3_4, type: box, min: [0.0, -0.15, -1.0], max: [1.0, 0.0, 0.0], material: black_metal }
-  - { name: board_3_5, type: box, min: [1.0, -0.15, -1.0], max: [2.0, 0.0, 0.0], material: white_metal }
-  - { name: board_3_6, type: box, min: [2.0, -0.15, -1.0], max: [3.0, 0.0, 0.0], material: black_metal }
-  - { name: board_3_7, type: box, min: [3.0, -0.15, -1.0], max: [4.0, 0.0, 0.0], material: white_metal }
-  - { name: board_4_0, type: box, min: [-4.0, -0.15, 0.0], max: [-3.0, 0.0, 1.0], material: white_metal }
-  - { name: board_4_1, type: box, min: [-3.0, -0.15, 0.0], max: [-2.0, 0.0, 1.0], material: black_metal }
-  - { name: board_4_2, type: box, min: [-2.0, -0.15, 0.0], max: [-1.0, 0.0, 1.0], material: white_metal }
-  - { name: board_4_3, type: box, min: [-1.0, -0.15, 0.0], max: [0.0, 0.0, 1.0], material: black_metal }
-  - { name: board_4_4, type: box, min: [0.0, -0.15, 0.0], max: [1.0, 0.0, 1.0], material: white_metal }
-  - { name: board_4_5, type: box, min: [1.0, -0.15, 0.0], max: [2.0, 0.0, 1.0], material: black_metal }
-  - { name: board_4_6, type: box, min: [2.0, -0.15, 0.0], max: [3.0, 0.0, 1.0], material: white_metal }
-  - { name: board_4_7, type: box, min: [3.0, -0.15, 0.0], max: [4.0, 0.0, 1.0], material: black_metal }
-  - { name: board_5_0, type: box, min: [-4.0, -0.15, 1.0], max: [-3.0, 0.0, 2.0], material: black_metal }
-  - { name: board_5_1, type: box, min: [-3.0, -0.15, 1.0], max: [-2.0, 0.0, 2.0], material: white_metal }
-  - { name: board_5_2, type: box, min: [-2.0, -0.15, 1.0], max: [-1.0, 0.0, 2.0], material: black_metal }
-  - { name: board_5_3, type: box, min: [-1.0, -0.15, 1.0], max: [0.0, 0.0, 2.0], material: white_metal }
-  - { name: board_5_4, type: box, min: [0.0, -0.15, 1.0], max: [1.0, 0.0, 2.0], material: black_metal }
-  - { name: board_5_5, type: box, min: [1.0, -0.15, 1.0], max: [2.0, 0.0, 2.0], material: white_metal }
-  - { name: board_5_6, type: box, min: [2.0, -0.15, 1.0], max: [3.0, 0.0, 2.0], material: black_metal }
-  - { name: board_5_7, type: box, min: [3.0, -0.15, 1.0], max: [4.0, 0.0, 2.0], material: white_metal }
-  - { name: board_6_0, type: box, min: [-4.0, -0.15, 2.0], max: [-3.0, 0.0, 3.0], material: white_metal }
-  - { name: board_6_1, type: box, min: [-3.0, -0.15, 2.0], max: [-2.0, 0.0, 3.0], material: black_metal }
-  - { name: board_6_2, type: box, min: [-2.0, -0.15, 2.0], max: [-1.0, 0.0, 3.0], material: white_metal }
-  - { name: board_6_3, type: box, min: [-1.0, -0.15, 2.0], max: [0.0, 0.0, 3.0], material: black_metal }
-  - { name: board_6_4, type: box, min: [0.0, -0.15, 2.0], max: [1.0, 0.0, 3.0], material: white_metal }
-  - { name: board_6_5, type: box, min: [1.0, -0.15, 2.0], max: [2.0, 0.0, 3.0], material: black_metal }
-  - { name: board_6_6, type: box, min: [2.0, -0.15, 2.0], max: [3.0, 0.0, 3.0], material: white_metal }
-  - { name: board_6_7, type: box, min: [3.0, -0.15, 2.0], max: [4.0, 0.0, 3.0], material: black_metal }
-  - { name: board_7_0, type: box, min: [-4.0, -0.15, 3.0], max: [-3.0, 0.0, 4.0], material: black_metal }
-  - { name: board_7_1, type: box, min: [-3.0, -0.15, 3.0], max: [-2.0, 0.0, 4.0], material: white_metal }
-  - { name: board_7_2, type: box, min: [-2.0, -0.15, 3.0], max: [-1.0, 0.0, 4.0], material: black_metal }
-  - { name: board_7_3, type: box, min: [-1.0, -0.15, 3.0], max: [0.0, 0.0, 4.0], material: white_metal }
-  - { name: board_7_4, type: box, min: [0.0, -0.15, 3.0], max: [1.0, 0.0, 4.0], material: black_metal }
-  - { name: board_7_5, type: box, min: [1.0, -0.15, 3.0], max: [2.0, 0.0, 4.0], material: white_metal }
-  - { name: board_7_6, type: box, min: [2.0, -0.15, 3.0], max: [3.0, 0.0, 4.0], material: black_metal }
-  - { name: board_7_7, type: box, min: [3.0, -0.15, 3.0], max: [4.0, 0.0, 4.0], material: white_metal }
+  # === Reflective Marble Floor ===
+  - { name: marble_floor, type: box, min: [-15.0, -0.05, -10.0], max: [10.0, 0.0, 10.0], material: floor_marble, physics: { body_type: static } }
 
   # === Bowling Ball ===
   - name: bowling_ball
@@ -165,530 +115,75 @@ objects:
       initial_velocity: [3.54, 0.0, -3.54]
 
   # === Letter 'n' (dynamic, asleep until swept) ===
-  - name: n_0
-    type: box
-    min: [-1.62, 0.48, 0.5]
-    max: [-1.5, 0.6, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_1
-    type: box
-    min: [-1.5, 0.48, 0.5]
-    max: [-1.38, 0.6, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_2
-    type: box
-    min: [-1.74, 0.36, 0.5]
-    max: [-1.62, 0.48, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_3
-    type: box
-    min: [-1.38, 0.36, 0.5]
-    max: [-1.26, 0.48, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_4
-    type: box
-    min: [-1.74, 0.24, 0.5]
-    max: [-1.62, 0.36, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_5
-    type: box
-    min: [-1.38, 0.24, 0.5]
-    max: [-1.26, 0.36, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_6
-    type: box
-    min: [-1.74, 0.12, 0.5]
-    max: [-1.62, 0.24, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_7
-    type: box
-    min: [-1.38, 0.12, 0.5]
-    max: [-1.26, 0.24, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_8
-    type: box
-    min: [-1.74, 0.0, 0.5]
-    max: [-1.62, 0.12, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: n_9
-    type: box
-    min: [-1.38, 0.0, 0.5]
-    max: [-1.26, 0.12, 0.62]
-    material: red_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
+  - { name: n_0, type: box, min: [-1.62, 0.48, 0.5], max: [-1.5, 0.6, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_1, type: box, min: [-1.5, 0.48, 0.5], max: [-1.38, 0.6, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_2, type: box, min: [-1.74, 0.36, 0.5], max: [-1.62, 0.48, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_3, type: box, min: [-1.38, 0.36, 0.5], max: [-1.26, 0.48, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_4, type: box, min: [-1.74, 0.24, 0.5], max: [-1.62, 0.36, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_5, type: box, min: [-1.38, 0.24, 0.5], max: [-1.26, 0.36, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_6, type: box, min: [-1.74, 0.12, 0.5], max: [-1.62, 0.24, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_7, type: box, min: [-1.38, 0.12, 0.5], max: [-1.26, 0.24, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_8, type: box, min: [-1.74, 0.0, 0.5], max: [-1.62, 0.12, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: n_9, type: box, min: [-1.38, 0.0, 0.5], max: [-1.26, 0.12, 0.62], material: red_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
 
   # === Letter 'W' (dynamic physics) ===
-  - name: W_0
-    type: box
-    min: [-1.02, 0.72, 0.5]
-    max: [-0.9, 0.84, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_1
-    type: box
-    min: [-0.54, 0.72, 0.5]
-    max: [-0.42, 0.84, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_2
-    type: box
-    min: [-1.02, 0.6, 0.5]
-    max: [-0.9, 0.72, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_3
-    type: box
-    min: [-0.54, 0.6, 0.5]
-    max: [-0.42, 0.72, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_4
-    type: box
-    min: [-1.02, 0.48, 0.5]
-    max: [-0.9, 0.6, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_5
-    type: box
-    min: [-0.54, 0.48, 0.5]
-    max: [-0.42, 0.6, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_6
-    type: box
-    min: [-1.02, 0.36, 0.5]
-    max: [-0.9, 0.48, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_7
-    type: box
-    min: [-0.78, 0.36, 0.5]
-    max: [-0.66, 0.48, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_8
-    type: box
-    min: [-0.54, 0.36, 0.5]
-    max: [-0.42, 0.48, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_9
-    type: box
-    min: [-1.02, 0.24, 0.5]
-    max: [-0.9, 0.36, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_10
-    type: box
-    min: [-0.78, 0.24, 0.5]
-    max: [-0.66, 0.36, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_11
-    type: box
-    min: [-0.54, 0.24, 0.5]
-    max: [-0.42, 0.36, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_12
-    type: box
-    min: [-1.02, 0.12, 0.5]
-    max: [-0.9, 0.24, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_13
-    type: box
-    min: [-0.9, 0.12, 0.5]
-    max: [-0.78, 0.24, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_14
-    type: box
-    min: [-0.66, 0.12, 0.5]
-    max: [-0.54, 0.24, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_15
-    type: box
-    min: [-0.54, 0.12, 0.5]
-    max: [-0.42, 0.24, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_16
-    type: box
-    min: [-1.02, 0.0, 0.5]
-    max: [-0.9, 0.12, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: W_17
-    type: box
-    min: [-0.54, 0.0, 0.5]
-    max: [-0.42, 0.12, 0.62]
-    material: green_glass
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
+  - { name: W_0, type: box, min: [-1.02, 0.72, 0.5], max: [-0.9, 0.84, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_1, type: box, min: [-0.54, 0.72, 0.5], max: [-0.42, 0.84, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_2, type: box, min: [-1.02, 0.6, 0.5], max: [-0.9, 0.72, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_3, type: box, min: [-0.54, 0.6, 0.5], max: [-0.42, 0.72, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_4, type: box, min: [-1.02, 0.48, 0.5], max: [-0.9, 0.6, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_5, type: box, min: [-0.54, 0.48, 0.5], max: [-0.42, 0.6, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_6, type: box, min: [-1.02, 0.36, 0.5], max: [-0.9, 0.48, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_7, type: box, min: [-0.78, 0.36, 0.5], max: [-0.66, 0.48, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_8, type: box, min: [-0.54, 0.36, 0.5], max: [-0.42, 0.48, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_9, type: box, min: [-1.02, 0.24, 0.5], max: [-0.9, 0.36, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_10, type: box, min: [-0.78, 0.24, 0.5], max: [-0.66, 0.36, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_11, type: box, min: [-0.54, 0.24, 0.5], max: [-0.42, 0.36, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_12, type: box, min: [-1.02, 0.12, 0.5], max: [-0.9, 0.24, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_13, type: box, min: [-0.9, 0.12, 0.5], max: [-0.78, 0.24, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_14, type: box, min: [-0.66, 0.12, 0.5], max: [-0.54, 0.24, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_15, type: box, min: [-0.54, 0.12, 0.5], max: [-0.42, 0.24, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_16, type: box, min: [-1.02, 0.0, 0.5], max: [-0.9, 0.12, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: W_17, type: box, min: [-0.54, 0.0, 0.5], max: [-0.42, 0.12, 0.62], material: green_glass, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
 
   # === Letter 'a' (dynamic, asleep until swept) ===
-  - name: a_0
-    type: box
-    min: [-0.18, 0.48, 0.5]
-    max: [-0.06, 0.6, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_1
-    type: box
-    min: [-0.06, 0.48, 0.5]
-    max: [0.06, 0.6, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_2
-    type: box
-    min: [0.06, 0.48, 0.5]
-    max: [0.18, 0.6, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_3
-    type: box
-    min: [0.06, 0.36, 0.5]
-    max: [0.18, 0.48, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_4
-    type: box
-    min: [-0.18, 0.24, 0.5]
-    max: [-0.06, 0.36, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_5
-    type: box
-    min: [-0.06, 0.24, 0.5]
-    max: [0.06, 0.36, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_6
-    type: box
-    min: [0.06, 0.24, 0.5]
-    max: [0.18, 0.36, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_7
-    type: box
-    min: [-0.3, 0.12, 0.5]
-    max: [-0.18, 0.24, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_8
-    type: box
-    min: [0.06, 0.12, 0.5]
-    max: [0.18, 0.24, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_9
-    type: box
-    min: [-0.18, 0.0, 0.5]
-    max: [-0.06, 0.12, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_10
-    type: box
-    min: [-0.06, 0.0, 0.5]
-    max: [0.06, 0.12, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: a_11
-    type: box
-    min: [0.18, 0.0, 0.5]
-    max: [0.3, 0.12, 0.62]
-    material: blue_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
+  - { name: a_0, type: box, min: [-0.18, 0.48, 0.5], max: [-0.06, 0.6, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_1, type: box, min: [-0.06, 0.48, 0.5], max: [0.06, 0.6, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_2, type: box, min: [0.06, 0.48, 0.5], max: [0.18, 0.6, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_3, type: box, min: [0.06, 0.36, 0.5], max: [0.18, 0.48, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_4, type: box, min: [-0.18, 0.24, 0.5], max: [-0.06, 0.36, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_5, type: box, min: [-0.06, 0.24, 0.5], max: [0.06, 0.36, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_6, type: box, min: [0.06, 0.24, 0.5], max: [0.18, 0.36, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_7, type: box, min: [-0.3, 0.12, 0.5], max: [-0.18, 0.24, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_8, type: box, min: [0.06, 0.12, 0.5], max: [0.18, 0.24, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_9, type: box, min: [-0.18, 0.0, 0.5], max: [-0.06, 0.12, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_10, type: box, min: [-0.06, 0.0, 0.5], max: [0.06, 0.12, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: a_11, type: box, min: [0.18, 0.0, 0.5], max: [0.3, 0.12, 0.62], material: blue_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
 
   # === Letter 'v' (dynamic, asleep until swept) ===
-  - name: v_0
-    type: box
-    min: [0.42, 0.48, 0.5]
-    max: [0.54, 0.6, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_1
-    type: box
-    min: [0.9, 0.48, 0.5]
-    max: [1.02, 0.6, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_2
-    type: box
-    min: [0.42, 0.36, 0.5]
-    max: [0.54, 0.48, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_3
-    type: box
-    min: [0.9, 0.36, 0.5]
-    max: [1.02, 0.48, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_4
-    type: box
-    min: [0.54, 0.24, 0.5]
-    max: [0.66, 0.36, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_5
-    type: box
-    min: [0.78, 0.24, 0.5]
-    max: [0.9, 0.36, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_6
-    type: box
-    min: [0.54, 0.12, 0.5]
-    max: [0.66, 0.24, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_7
-    type: box
-    min: [0.78, 0.12, 0.5]
-    max: [0.9, 0.24, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
-  - name: v_8
-    type: box
-    min: [0.66, 0.0, 0.5]
-    max: [0.78, 0.12, 0.62]
-    material: orange_mat
-    physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 }
+  - { name: v_0, type: box, min: [0.42, 0.48, 0.5], max: [0.54, 0.6, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_1, type: box, min: [0.9, 0.48, 0.5], max: [1.02, 0.6, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_2, type: box, min: [0.42, 0.36, 0.5], max: [0.54, 0.48, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_3, type: box, min: [0.9, 0.36, 0.5], max: [1.02, 0.48, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_4, type: box, min: [0.54, 0.24, 0.5], max: [0.66, 0.36, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_5, type: box, min: [0.78, 0.24, 0.5], max: [0.9, 0.36, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_6, type: box, min: [0.54, 0.12, 0.5], max: [0.66, 0.24, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_7, type: box, min: [0.78, 0.12, 0.5], max: [0.9, 0.24, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
+  - { name: v_8, type: box, min: [0.66, 0.0, 0.5], max: [0.78, 0.12, 0.62], material: orange_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true, wake_frame: 88 } }
 
   # === Letter 'e' (dynamic, asleep until disturbed) ===
-  - name: e_0
-    type: box
-    min: [1.26, 0.48, 0.5]
-    max: [1.38, 0.6, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_1
-    type: box
-    min: [1.38, 0.48, 0.5]
-    max: [1.5, 0.6, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_2
-    type: box
-    min: [1.14, 0.36, 0.5]
-    max: [1.26, 0.48, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_3
-    type: box
-    min: [1.5, 0.36, 0.5]
-    max: [1.62, 0.48, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_4
-    type: box
-    min: [1.14, 0.24, 0.5]
-    max: [1.26, 0.36, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_5
-    type: box
-    min: [1.26, 0.24, 0.5]
-    max: [1.38, 0.36, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_6
-    type: box
-    min: [1.38, 0.24, 0.5]
-    max: [1.5, 0.36, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_7
-    type: box
-    min: [1.5, 0.24, 0.5]
-    max: [1.62, 0.36, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_8
-    type: box
-    min: [1.14, 0.12, 0.5]
-    max: [1.26, 0.24, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_9
-    type: box
-    min: [1.26, 0.0, 0.5]
-    max: [1.38, 0.12, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_10
-    type: box
-    min: [1.38, 0.0, 0.5]
-    max: [1.5, 0.12, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
-  - name: e_11
-    type: box
-    min: [1.5, 0.0, 0.5]
-    max: [1.62, 0.12, 0.62]
-    material: purple_mat
-    physics:
-      body_type: dynamic
-      mass: 0.1
-      friction: 0.3
-      restitution: 0.4
-      start_asleep: true
+  - { name: e_0, type: box, min: [1.26, 0.48, 0.5], max: [1.38, 0.6, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_1, type: box, min: [1.38, 0.48, 0.5], max: [1.5, 0.6, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_2, type: box, min: [1.14, 0.36, 0.5], max: [1.26, 0.48, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_3, type: box, min: [1.5, 0.36, 0.5], max: [1.62, 0.48, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_4, type: box, min: [1.14, 0.24, 0.5], max: [1.26, 0.36, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_5, type: box, min: [1.26, 0.24, 0.5], max: [1.38, 0.36, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_6, type: box, min: [1.38, 0.24, 0.5], max: [1.5, 0.36, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_7, type: box, min: [1.5, 0.24, 0.5], max: [1.62, 0.36, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_8, type: box, min: [1.14, 0.12, 0.5], max: [1.26, 0.24, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 0.1, friction: 0.3, restitution: 0.4, start_asleep: true } }
+  - { name: e_9, type: box, min: [1.26, 0.0, 0.5], max: [1.38, 0.12, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 1.0, friction: 0.6, restitution: 0.2, start_asleep: true } }
+  - { name: e_10, type: box, min: [1.38, 0.0, 0.5], max: [1.5, 0.12, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 1.0, friction: 0.6, restitution: 0.2, start_asleep: true } }
+  - { name: e_11, type: box, min: [1.5, 0.0, 0.5], max: [1.62, 0.12, 0.62], material: purple_mat, physics: { body_type: dynamic, mass: 1.0, friction: 0.6, restitution: 0.2, start_asleep: true } }
 
   # === Glass Sweeper Prism (kinematic, sweeps board from back to front) ===
   - name: sweeper_prism
@@ -704,7 +199,7 @@ objects:
       friction: 0.3
       restitution: 0.2
 
-  # === Soft Body Jelly Cube (falls onto 'e') ===
+  # === Soft Body Jelly Cube (falls onto letter blocks, gets swept by prism) ===
   - type: soft_body_cube
     material: pink_jelly
     position: [1.38, 3.0, 0.56]
@@ -718,70 +213,127 @@ objects:
     edge_compliance: 0.0005
     volume_compliance: 0.0
 
-  # === Marble Spheres (roll left to right across the board) ===
-  - name: marble_sphere
+  # === Rolling Procedural Spheres (20 total, single-file across the board) ===
+  - name: sphere_camouflage
     type: sphere
-    center: [-9.0, 0.5, -0.5]
-    radius: 0.5
-    material: marble_texture
-    physics:
-      body_type: dynamic
-      mass: 4.0
-      friction: 0.5
-      restitution: 0.3
-      initial_velocity: [9.0, 0.0, 0.0]
-      start_asleep: true
-      wake_frame: 100
-  - name: earth_ball
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_camouflage
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 160 }
+  - name: sphere_cave_art
     type: sphere
-    center: [0, 20.0, 0]
-    radius: 1.5
-    material: earth_texture
-    physics:
-      body_type: kinematic
-      initial_angular_velocity: [0.0, 0.367, 0.159]
-      start_asleep: true
-      wake_frame: 300
-  - name: wood_ball
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_cave_art
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 170 }
+  - name: sphere_clouds
     type: sphere
-    center: [-9.3, 0.25, -1.8]
-    radius: 0.25
-    material: wood_texture
-    physics:
-      body_type: dynamic
-      mass: 0.8
-      friction: 0.5
-      restitution: 0.3
-      initial_velocity: [8.0, 0.0, 0.0]
-      start_asleep: true
-      wake_frame: 103
-  - name: eye_ball
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_clouds
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 180 }
+  - name: sphere_concrete
     type: sphere
-    center: [-9.4, 0.3, -0.2]
-    radius: 0.3
-    material: eye_texture
-    physics:
-      body_type: dynamic
-      mass: 1.2
-      friction: 0.5
-      restitution: 0.3
-      initial_velocity: [8.5, 0.0, 0.0]
-      start_asleep: true
-      wake_frame: 118
-  # === Moon (orbits Earth starting at frame 300) ===
-  - name: moon_ball
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_concrete
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 190 }
+  - name: sphere_entangled
     type: sphere
-    center: [3.5, 20.0, 0]
-    radius: 0.375
-    material: moon_texture
-    physics:
-      body_type: kinematic
-      start_asleep: true
-      wake_frame: 300
-    orbit:
-      target: earth_ball
-      radius: 3.5
-      speed: 2.0
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_entangled
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 200 }
+  - name: sphere_fordite
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_fordite
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 210 }
+  - name: sphere_grid
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_grid
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 220 }
+  - name: sphere_isolines
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_isolines
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 230 }
+  - name: sphere_marble
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_marble
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 240 }
+  - name: sphere_neon_lights
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_neon_lights
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 250 }
+  - name: sphere_planet
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_planet
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 260 }
+  - name: sphere_photosphere
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_photosphere
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 270 }
+  - name: sphere_polka_dots
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_polka_dots
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 280 }
+  - name: sphere_satin
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_satin
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 290 }
+  - name: sphere_scepter_head
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_scepter_head
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 300 }
+  - name: sphere_scream
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_scream
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 310 }
+  - name: sphere_simplex_noise
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_simplex_noise
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 320 }
+  - name: sphere_stars
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_stars
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 330 }
+  - name: sphere_water_drops
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_water_drops
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 340 }
+  - name: sphere_zebra
+    type: sphere
+    center: [-12, 0.2, 1.0]
+    radius: 0.2
+    material: tex_zebra
+    physics: { body_type: dynamic, mass: 2.0, friction: 0.3, restitution: 0.3, initial_velocity: [3.0, 0.0, 0.0], initial_angular_velocity: [0.0, 0.0, -15.0], start_asleep: true, wake_frame: 350 }
 
 lights:
   - type: point
@@ -790,7 +342,7 @@ lights:
     intensity: 0.7
 
 camera:
-  lookfrom: [2, 3, 6]
+  lookfrom: [2, 1.87, 6]
   lookat: [0, 0.3, 0.5]
   vup: [0, 1, 0]
   vfov: 38
@@ -798,9 +350,15 @@ camera:
   image_width: 1920
 
 animation:
-  duration: 15.0
+  duration: 25.0
   physics_timestep: 0.01667
   render_fps: 30
   wake_frame: 20
-  earth_frame: 300
   output_directory: "frames/bowling/"
+  finale:
+    start_frame: 390
+    earth_texture: "textures/flat_earth03.jpg"
+    earth_radius: 1.5
+    earth_tilt: 23.5
+    moon_radius_ratio: 0.25
+    moon_texture: "textures/8k_moon.jpg"

@@ -1,0 +1,181 @@
+project_id: glass-sweeper-prism
+goal: >
+  Add a blue glass rectangular prism that sweeps across the chessboard in the
+  nWave bowling demo, pushing all dynamic objects off the board. Requires
+  kinematic velocity support, per-body wake_frame, and YAML scene content.
+created: 2026-02-19
+revision: 1
+
+phases:
+  - id: "01"
+    name: "Domain & Port Foundation"
+    description: "Add wake_frame field to PhysicsProperties and wake_body method to PhysicsSimulator port"
+
+    steps:
+      - id: "01-01"
+        title: "Per-body wake_frame field in PhysicsProperties"
+        user_story: US-004
+        description: >
+          Add std::optional<int> wake_frame to PhysicsProperties struct with
+          default std::nullopt. Requires #include <optional> in physics_properties.h.
+          Field is pure data; no behavior logic in domain.
+        files_to_modify:
+          - src/domain/physics_properties.h
+        acceptance_criteria:
+          - "PhysicsProperties has a wake_frame field of type std::optional<int>"
+          - "Default-constructed PhysicsProperties has wake_frame == std::nullopt"
+          - "PhysicsProperties with wake_frame=60 stores and retrieves the value correctly"
+          - "All existing tests pass unchanged"
+        depends_on: []
+
+      - id: "01-02"
+        title: "wake_body method on PhysicsSimulator port"
+        user_story: US-004
+        description: >
+          Add virtual void wake_body(int body_id) = 0 to PhysicsSimulator interface.
+          Add stub override to FakePhysicsSimulator in animation_renderer_test.cpp
+          (empty body, records call for verification). Add throwing stub to
+          JoltPhysicsSimulator (.h declaration + .cpp throws runtime_error).
+        files_to_modify:
+          - src/application/physics_simulator.h
+          - src/infrastructure/jolt_physics_simulator.h
+          - src/infrastructure/jolt_physics_simulator.cpp
+          - tests/application/animation_renderer_test.cpp
+        acceptance_criteria:
+          - "PhysicsSimulator interface declares wake_body(int body_id) as pure virtual"
+          - "JoltPhysicsSimulator compiles with stub that throws std::runtime_error('not implemented')"
+          - "FakePhysicsSimulator compiles with empty wake_body override"
+          - "Existing wake_all() method and all existing tests pass unchanged"
+        depends_on: ["01-01"]
+
+  - id: "02"
+    name: "Infrastructure"
+    description: "Kinematic velocity fix, wake_body Jolt implementation, and YAML wake_frame parsing"
+
+    steps:
+      - id: "02-01"
+        title: "Apply initial_velocity to kinematic bodies"
+        user_story: US-003
+        description: >
+          Widen the condition at jolt_physics_simulator.cpp line 225 to include
+          BodyType::KINEMATIC alongside BodyType::DYNAMIC for mLinearVelocity
+          assignment. One-line condition change.
+        files_to_modify:
+          - src/infrastructure/jolt_physics_simulator.cpp
+        acceptance_criteria:
+          - "Kinematic body created with initial_velocity [0, 0, -3.44] has that linear velocity"
+          - "Kinematic body moves at constant velocity through physics steps (position Z decreases linearly)"
+          - "Kinematic body is not affected by gravity (Y position unchanged)"
+          - "Kinematic body with zero initial_velocity remains stationary"
+          - "Dynamic body velocity behavior is unchanged"
+        depends_on: ["01-02"]
+
+      - id: "02-02"
+        title: "JoltPhysicsSimulator wake_body implementation"
+        user_story: US-004
+        description: >
+          Replace the throwing stub with a real implementation. Use
+          BodyInterface::ActivateBody for the specified body ID, following
+          the same pattern as wake_all(). Validates body_id range.
+        files_to_modify:
+          - src/infrastructure/jolt_physics_simulator.cpp
+        acceptance_criteria:
+          - "wake_body(id) activates a sleeping body so it begins moving"
+          - "A kinematic body with start_asleep=true and initial_velocity does not move before wake_body is called"
+          - "After wake_body is called, the body moves at its stored initial_velocity"
+          - "Calling wake_body on an already-active body does not cause errors"
+          - "Existing wake_all() behavior is unchanged"
+        depends_on: ["02-01"]
+
+      - id: "02-03"
+        title: "YAML parsing for wake_frame field"
+        user_story: US-004
+        description: >
+          Extend parse_physics() in yaml_scene_loader.cpp to read optional
+          wake_frame integer from the YAML physics block. Store in
+          PhysicsProperties.wake_frame. Omitted field stays nullopt.
+        files_to_modify:
+          - src/infrastructure/yaml_scene_loader.cpp
+        acceptance_criteria:
+          - "YAML physics block with wake_frame: 60 parses into PhysicsProperties with wake_frame==60"
+          - "YAML physics block without wake_frame parses into PhysicsProperties with wake_frame==nullopt"
+          - "Existing scene files (nwave_bowling.yaml, gpu_showcase.yaml) parse without error"
+          - "wake_frame: 0 parses correctly as zero (edge case)"
+        depends_on: ["01-01"]
+
+  - id: "03"
+    name: "Application"
+    description: "Per-body wake logic in AnimationRenderer render loop"
+
+    steps:
+      - id: "03-01"
+        title: "Per-body wake_frame check in animation render loop"
+        user_story: US-004
+        description: >
+          After the existing global wake_frame check at animation_renderer.cpp
+          line 232, add a per-body check: for each shape with a per-object
+          wake_frame matching the current frame, call wake_body(body_id).
+          The FakePhysicsSimulator must record wake_body calls for test verification.
+        files_to_modify:
+          - src/application/animation_renderer.cpp
+          - tests/application/animation_renderer_test.cpp
+        acceptance_criteria:
+          - "A body with start_asleep=true and wake_frame=3 has wake_body called at frame 3"
+          - "A body with start_asleep=true and no wake_frame is NOT individually woken (relies on global wake)"
+          - "A body without start_asleep is not affected by wake_frame logic"
+          - "Global wake_frame behavior at AnimationConfig.wake_frame is unchanged"
+          - "Existing AnimationRenderer tests pass unchanged"
+        depends_on: ["02-02", "02-03"]
+
+  - id: "04"
+    name: "Scene Content & Integration"
+    description: "YAML content additions and end-to-end verification"
+
+    steps:
+      - id: "04-01"
+        title: "Blue glass material and sweeper prism in scene YAML"
+        user_story: "US-001, US-002, US-005"
+        description: >
+          Add blue_glass material (dielectric, ior 1.5, tint [0.4, 0.4, 0.95])
+          and sweeper_prism box (min [-4, 0.01, 4.0], max [4, 1.5, 4.3],
+          kinematic, initial_velocity [0, 0, -3.44], start_asleep true,
+          wake_frame 60) to nwave_bowling.yaml. No code changes.
+        files_to_modify:
+          - scenes/nwave_bowling.yaml
+        acceptance_criteria:
+          - "blue_glass material with type dielectric, ior 1.5, tint [0.4, 0.4, 0.95] is present"
+          - "sweeper_prism box spans x=-4 to x=4 (full board width)"
+          - "sweeper_prism has body_type kinematic, initial_velocity [0, 0, -3.44], start_asleep true, wake_frame 60"
+          - "Scene file loads without parse errors"
+          - "Frame 0 renders the sweeper prism as a blue glass wall at the back of the board"
+        depends_on: ["03-01"]
+
+      - id: "04-02"
+        title: "Integration verification: sweeper clears all dynamic objects"
+        user_story: US-005
+        description: >
+          Run full nwave_bowling animation and verify the sweeper pushes all
+          dynamic objects (W blocks, bowling ball, e blocks, jelly cube) past
+          z=-4 by animation end. Static objects (chessboard, n, a, v) unchanged.
+          This is a verification step, not a code change.
+        files_to_modify: []
+        acceptance_criteria:
+          - "Sweeper does not move before frame 60 (z position unchanged)"
+          - "After frame 60, sweeper moves steadily in -Z direction"
+          - "All dynamic W blocks are pushed past z=-4 by animation end"
+          - "Bowling ball is pushed past z=-4 by animation end"
+          - "Static objects (chessboard tiles, ground, n/a/v letters) remain at original positions"
+        depends_on: ["04-01"]
+
+validation:
+  status: pending
+  reviewer: null
+  date: null
+  revision_notes: >
+    Initial revision. 7 steps across 4 phases covering all 5 user stories.
+    US-001/US-002 are YAML-only (step 04-01). US-003 is a one-line fix (step 02-01).
+    US-004 spans domain/port/infra/application (steps 01-01 through 03-01).
+    US-005 is integration verification (step 04-02).
+    Total production files modified: 7 (physics_properties.h, physics_simulator.h,
+    jolt_physics_simulator.h, jolt_physics_simulator.cpp, yaml_scene_loader.cpp,
+    animation_renderer.cpp, nwave_bowling.yaml). Steps/files ratio: 7/7 = 1.0.
