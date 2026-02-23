@@ -166,19 +166,15 @@ int AnimationRenderer::render() {
         if (mesh) anim_scene.add_shape(mesh);
     }
 
-    // Clear any lights loaded from the YAML scene
+    // Bowling phase: two directional lights at different heights + ambient
+    // Scene centre is roughly (0, 0.3, 0.5)
+    // High light: from upper-left, steep angle
     anim_scene.clear_lights();
-    // Bowling phase lighting: two directional lights aimed at scene centre,
-    // 45 degrees apart in azimuth (at 45° and 90° from the +X axis),
-    // both angled downward at ~45° elevation.
-    //   Light 1: azimuth 45° -> direction toward centre = (-sin45, -1, -cos45) normalized
-    //   Light 2: azimuth 90° -> direction toward centre = (-1, -1, 0) normalized
     anim_scene.add_light(std::make_shared<DirectionalLight>(
-        normalize(Vec3(-0.7071, -1.0, -0.7071)),
-        Color3(1.0, 0.97, 0.9), 1.2));
+        normalize(Vec3(0.4, -1.0, -0.6)), Color3(1.0, 0.97, 0.9), 1.5));
+    // Low light: from right, shallow angle for long shadows
     anim_scene.add_light(std::make_shared<DirectionalLight>(
-        normalize(Vec3(-1.0, -1.0, 0.0)),
-        Color3(0.9, 0.93, 1.0), 0.8));
+        normalize(Vec3(-0.5, -0.3, 0.4)), Color3(0.9, 0.95, 1.0), 1.0));
 
     // Identify sweeper body by name
     int sweeper_index = -1;
@@ -257,7 +253,10 @@ int AnimationRenderer::render() {
         RenderSettings frame_settings;
         frame_settings.samples_per_pixel = 1; // placeholder; actual SPP set by CLI via main.cpp
         frame_settings.max_depth = 10;
-        frame_settings.ambient_factor = 0.08f;
+        frame_settings.ambient_factor = 0.45f;
+        // Light blue sky background
+        frame_settings.background_top = Color3(0.35, 0.55, 0.85);
+        frame_settings.background_bottom = Color3(0.65, 0.75, 0.90);
 
         // Render frame
         std::string filename = frame_filename(config_.output_directory, frame);

@@ -276,7 +276,13 @@ static int run_physics_animate(const RenderCommand& cmd) {
         return 1;
     }
 
-    const AnimationConfig& anim_config = result.animation_config.value();
+    AnimationConfig anim_config = result.animation_config.value();
+    if (!cmd.output_dir.empty()) {
+        anim_config.output_directory = cmd.output_dir;
+        if (anim_config.output_directory.back() != '/') {
+            anim_config.output_directory += '/';
+        }
+    }
     Camera camera = build_camera_with_overrides(yaml_content, result.camera, cmd.width);
 
     std::filesystem::create_directories(anim_config.output_directory);
@@ -420,6 +426,9 @@ static int run_validate(const ValidateCommand& cmd) {
 }
 
 int main(int argc, char* argv[]) {
+    std::cerr << "nWave ray tracer [built " << __DATE__ << " " << __TIME__ << "]"
+              << " ambient=" << 0.54f << "\n";
+
     // Preserve legacy behavior: no args runs the default hardcoded scene
     if (argc == 1) {
         return run_legacy_single_frame();

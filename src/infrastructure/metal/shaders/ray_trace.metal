@@ -949,14 +949,11 @@ kernel void ray_trace_kernel(
                 scene_hit = intersect_scene(current_ray, shapes, shape_count, T_MIN, T_MAX, rec);
             }
             if (!scene_hit) {
-                // Sky gradient only on primary ray (bounce 0).
-                // Indirect misses are already accounted for by explicit
-                // direct lighting (NEE) — adding sky here would double-count.
-                if (bounce == 0) {
-                    float3 unit_dir = normalize(current_ray.direction);
-                    float a = 0.5f * (unit_dir.y + 1.0f);
-                    color += throughput * ((1.0f - a) * camera.background_bottom + a * camera.background_top);
-                }
+                // Environment (sky) light: contributes on every bounce.
+                // throughput naturally attenuates the contribution for indirect rays.
+                float3 unit_dir = normalize(current_ray.direction);
+                float a = 0.5f * (unit_dir.y + 1.0f);
+                color += throughput * ((1.0f - a) * camera.background_bottom + a * camera.background_top);
                 break;
             }
 

@@ -806,9 +806,9 @@ TEST(AnimationRendererAcceptance, FinaleUsesDirectionalLightAndClearsSceneWithCo
     EXPECT_FLOAT_EQ(finale_ambient, 0.02f)
         << "Finale ambient should be 0.0 (directional light only)";
 
-    // AC4 (M4): Main animation ambient is 0.15 (dimmed with directional lights)
-    EXPECT_FLOAT_EQ(main_ambient, 0.08f)
-        << "Main animation ambient should be 0.15 (dimmed with directional lights)";
+    // AC4 (M4): Main animation ambient
+    EXPECT_FLOAT_EQ(main_ambient, 0.45f)
+        << "Main animation ambient should be 0.45";
 
     // AC5 (M5): Main animation has 2 directional lights
     EXPECT_EQ(main_light_count, 2)
@@ -912,8 +912,8 @@ TEST(AnimationRenderer, MainAnimationUsesBrightAmbientOnlyAndFinaleUsesNoAmbient
 
     renderer.render();
 
-    // M4: Main animation ambient = 0.15 (dimmed with directional lights)
-    EXPECT_FLOAT_EQ(captured_main_ambient, 0.08f);
+    // M4: Main animation ambient
+    EXPECT_FLOAT_EQ(captured_main_ambient, 0.45f);
     // M5: 2 directional lights during bowling phase
     EXPECT_EQ(main_light_count, 2);
     // M3: Finale ambient = 0.0 (directional light only)

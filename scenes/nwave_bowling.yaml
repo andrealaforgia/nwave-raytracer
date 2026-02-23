@@ -68,9 +68,9 @@ materials:
   # Reflective checkered floor (white/blue)
   - name: floor_marble
     type: checker_metal
-    color_a: [0.9, 0.9, 0.9]
-    color_b: [0.15, 0.25, 0.85]
-    fuzz: 0.02
+    color_a: [0.75, 0.75, 0.75]
+    color_b: [0.05, 0.05, 0.05]
+    fuzz: 0.0
     scale: 1.0
   # === Procedural texture materials (20 patterns) ===
   - { name: tex_camouflage, type: procedural_texture, pattern: camouflage, width: 1024, height: 512, seed: 12 }
